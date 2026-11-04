@@ -1,0 +1,3168 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  Calendar, CheckSquare, Sun, Moon, Heart, Target, Code, Settings,
+  Plus, Trash2, Check, Clock, Eye, EyeOff, Lock, Unlock,
+  Download, Upload, RefreshCw, Sparkles, BookOpen, Shield,
+  ChevronRight, ChevronDown, ExternalLink, QrCode, Flame,
+  Brain, Coffee, BatteryCharging, Feather, Compass, Filter,
+  RotateCcw, Archive, Star, Users, Home, ShoppingCart, Wrench,
+  MessageSquare, Radio, ArrowRight, CheckCircle2, HelpCircle, X
+} from 'lucide-react';
+
+// ============================================================================
+// INITIAL SEED DATA & RESEARCH-BACKED LIBRARIES
+// ============================================================================
+
+const INITIAL_SETTINGS = {
+  userName: 'Dan',
+  studyLens: 'BOTH', // 'NASB_LENS', 'NLT_LENS', 'BOTH'
+  wakeTime: '06:00',
+  sleepTime: '22:00',
+  maxActiveGoals: 3,
+  prayerDailyCardsCount: 4,
+  defaultPrayerFramework: 'PRAY',
+  wifeFilterEnabled: true,
+  hideShortSoloEvents: true,
+  wifeFilterKeywords: [
+    'dotti', 'musora', 'cancel', 'breakfast w/', 'advisement',
+    'remind', 'hair', 'nails', 'personal', 'rx', 'vitamins'
+  ],
+  showRestModuleInMorning: true,
+  antiPrematureDopamine: true,
+  lastExportDate: null,
+  gcalClientId: '',
+  lastGcalSync: 'Pre-loaded Nov 2026 Snapshot',
+  mobileCompactCards: true
+};
+
+// Pre-loaded with your real Google Calendar structure (Primary, Family, & Regla's shared calendars)
+const INITIAL_GCAL_EVENTS = [
+  {
+    id: 'gcal-1',
+    dayOffset: 0,
+    startTime: '08:00',
+    endTime: '17:00',
+    title: 'No School',
+    calendar: 'Wife Shared (regla317)',
+    isSoloReminder: false,
+    location: 'District Calendar'
+  },
+  {
+    id: 'gcal-2',
+    dayOffset: 1,
+    startTime: '09:00',
+    endTime: '10:00',
+    title: 'Breakfast w/Erica',
+    calendar: 'Wife Shared (regla317)',
+    isSoloReminder: true,
+    location: '5844 Reidville Rd, Moore, SC'
+  },
+  {
+    id: 'gcal-3',
+    dayOffset: 1,
+    startTime: '18:30',
+    endTime: '20:30',
+    title: 'BSF North Gate Church',
+    calendar: 'Wife Shared (reglaschuler)',
+    isSoloReminder: false,
+    location: '620 Holly Springs Rd, Lyman, SC'
+  },
+  {
+    id: 'gcal-4',
+    dayOffset: 2,
+    startTime: '08:00',
+    endTime: '08:30',
+    title: 'Dotti replacement',
+    calendar: 'Wife Shared (regla317)',
+    isSoloReminder: true,
+    location: 'Personal Reminder'
+  },
+  {
+    id: 'gcal-5',
+    dayOffset: 2,
+    startTime: '08:15',
+    endTime: '09:15',
+    title: 'HSM Veterans',
+    calendar: 'Wife Shared (regla317)',
+    isSoloReminder: false,
+    location: 'School Event'
+  },
+  {
+    id: 'gcal-6',
+    dayOffset: 2,
+    startTime: '09:00',
+    endTime: '09:30',
+    title: 'Did Shannon reply about slim computer?',
+    calendar: 'Primary (schuler314)',
+    isSoloReminder: false,
+    location: 'Do we have a free computer?'
+  },
+  {
+    id: 'gcal-7',
+    dayOffset: 2,
+    startTime: '09:00',
+    endTime: '10:00',
+    title: 'Cancel Musora',
+    calendar: 'Wife Shared (regla317)',
+    isSoloReminder: true,
+    location: 'Subscription Reminder'
+  },
+  {
+    id: 'gcal-8',
+    dayOffset: 2,
+    startTime: '08:00',
+    endTime: '10:00',
+    title: 'Dan Safety Team',
+    calendar: 'Primary (schuler314)',
+    isSoloReminder: false,
+    location: 'Church Campus'
+  },
+  {
+    id: 'gcal-9',
+    dayOffset: 2,
+    startTime: '08:20',
+    endTime: '11:00',
+    title: 'Regla Serving - Greeting',
+    calendar: 'Wife Shared (regla317)',
+    isSoloReminder: false,
+    location: 'Church Greeting Team'
+  },
+  {
+    id: 'gcal-10',
+    dayOffset: 2,
+    startTime: '08:15',
+    endTime: '09:15',
+    title: 'SCC Advisement- Meredith Walsh',
+    calendar: 'Wife Shared (regla317)',
+    isSoloReminder: true,
+    location: '107 Community College Dr, Spartanburg'
+  }
+];
+
+const INITIAL_LISTS = [
+  {
+    id: 'list-family',
+    title: 'Family Hub & Weekend',
+    category: 'Family',
+    color: 'emerald',
+    items: [
+      { id: 'li-1', text: 'Plan weekend outdoor walk & tree check', assignedTo: 'Family', completed: false, scheduledTime: '10:00' },
+      { id: 'li-2', text: 'Play a round of Conversation Cards after dinner', assignedTo: 'All', completed: false, scheduledTime: '19:00' },
+      { id: 'li-3', text: 'Check slim computer status with Shannon', assignedTo: 'Dan', completed: false, scheduledTime: '14:00' }
+    ]
+  },
+  {
+    id: 'list-groceries',
+    title: 'Groceries & Kitchen',
+    category: 'Groceries',
+    color: 'amber',
+    items: [
+      { id: 'li-4', text: 'Whole bean coffee & sparkling water', assignedTo: 'Shared', completed: false, scheduledTime: '16:00' },
+      { id: 'li-5', text: 'High-protein breakfast staples (eggs, Greek yogurt)', assignedTo: 'Shared', completed: false, scheduledTime: '16:00' },
+      { id: 'li-6', text: 'Magnesium glycinate & herbal night tea', assignedTo: 'Dan', completed: true, scheduledTime: '16:00' }
+    ]
+  },
+  {
+    id: 'list-workbench',
+    title: 'House, Yard & Workbench',
+    category: 'Workbench',
+    color: 'indigo',
+    items: [
+      { id: 'li-7', text: 'Inspect yard drainage and mulch around young trees', assignedTo: 'Dan', completed: false, scheduledTime: '15:30' },
+      { id: 'li-8', text: 'Organize garage tool bench & charging station', assignedTo: 'Dan', completed: false, scheduledTime: '16:30' }
+    ]
+  }
+];
+
+const MORNING_NEURO_MODULES = [
+  {
+    id: 'm-sunlight',
+    title: 'Low-Solar-Angle Sunlight + Optic Flow Walk',
+    durationMins: 12,
+    defaultTime: '06:30',
+    category: 'morning',
+    neuroPrinciple: 'SCN Circadian Phase Lock & Amygdala Quieting',
+    scienceSummary:
+      'Viewing natural outdoor light within 30–60 minutes of waking stimulates intrinsically photosensitive retinal ganglion cells (ipRGCs), triggering a healthy morning cortisol peak for alertness and starting a ~16-hour countdown to nighttime melatonin release. Forward walking generates lateral optic flow, which down-regulates amygdala threat reactivity.',
+    scriptureRef: 'Psalm 113:3 / Lamentations 3:22-23',
+    scriptureInsight: 'Greeting the rising sun anchors our nervous system in God’s daily renewal and faithfulness.'
+  },
+  {
+    id: 'm-hydration',
+    title: 'Electrolyte Hydration & 90-Min Caffeine Delay',
+    durationMins: 10,
+    defaultTime: '06:15',
+    category: 'morning',
+    neuroPrinciple: 'Adenosine Clearance & Afternoon Crash Prevention',
+    scienceSummary:
+      'Overnight respiration dehydrates neural tissue. Drinking 16oz of water first restores plasma volume, while delaying coffee 60–90 minutes allows residual nighttime adenosine to clear naturally via the morning cortisol pulse—preventing the 2:00 PM adenosine rebound crash.',
+    scriptureRef: 'Proverbs 3:7-8',
+    scriptureInsight: 'Caring for the physical vessel with patience rather than artificial urgency.'
+  },
+  {
+    id: 'm-mobility',
+    title: 'Joint, Tendon & Thoracic Mobility Flow',
+    durationMins: 15,
+    defaultTime: '06:45',
+    category: 'morning',
+    neuroPrinciple: 'Proprioceptive Wake-Up & BDNF Priming',
+    scienceSummary:
+      'Gentle unloaded joint rotations and spinal decompression circulate synovial fluid into cartilage and tendons while increasing cerebellar blood flow and Brain-Derived Neurotrophic Factor (BDNF) before sitting at a desk.',
+    scriptureRef: '1 Corinthians 6:19-20',
+    scriptureInsight: 'Stewarding joints and strength so the body remains ready for service.'
+  },
+  {
+    id: 'm-firstfruits',
+    title: 'Scripture Before Screens (No-Scroll First Hour)',
+    durationMins: 15,
+    defaultTime: '07:00',
+    category: 'morning',
+    neuroPrinciple: 'Protecting Baseline Tonic Dopamine & Alpha-Theta Transition',
+    scienceSummary:
+      'As the brain wakes, it transitions from Delta to Theta to Alpha waves. Checking notifications immediately hijacks the prefrontal cortex into reactive Beta stress and spikes phasic dopamine, making normal work feel dull. Starting with quiet Scripture preserves tonic dopamine.',
+    scriptureRef: 'Psalm 5:3 / Mark 1:35',
+    scriptureInsight: 'Ordering our attention toward God before the digital world makes its demands.'
+  },
+  {
+    id: 'm-nsdr',
+    title: 'Midday NSDR / Physiological Sigh Reset',
+    durationMins: 10,
+    defaultTime: '13:15',
+    category: 'morning',
+    neuroPrinciple: 'Striatal Dopamine Restoration & Vagal Brake',
+    scienceSummary:
+      'Two quick inhales through the nose followed by an extended exhale offloads CO2 and activates the parasympathetic vagus nerve. A 10-minute Non-Sleep Deep Rest (NSDR) protocol restores baseline striatal dopamine after heavy morning cognitive output.',
+    scriptureRef: 'Isaiah 30:15',
+    scriptureInsight: 'In returning and rest our strength is quietly renewed.'
+  }
+];
+
+const BIBLICAL_REST_MODULES = [
+  {
+    id: 'r-menuha',
+    title: 'Menuha Stillness Block (Zero Production)',
+    durationMins: 20,
+    defaultTime: '14:30',
+    category: 'rest',
+    biblicalPrinciple: 'Genesis 2:2-3 • Sacred Ceasing (Menuha)',
+    wisdomSummary:
+      'In Hebrew wisdom, Menuha is not merely recharging so you can work harder; it is joyful tranquility where you stop fixing, coding, or optimizing to remember that God sustains the world even when you pause.',
+    actionPrompt: 'Leave your phone in another room for 20 minutes. Sit on the porch or couch with zero podcasts, tasks, or troubleshooting.'
+  },
+  {
+    id: 'r-desolate',
+    title: 'Withdrawing to the Quiet Place (Outdoor Solitude)',
+    durationMins: 25,
+    defaultTime: '16:00',
+    category: 'rest',
+    biblicalPrinciple: 'Luke 5:16 • Jesus’ Rhythm of Solitude',
+    wisdomSummary:
+      'Even when crowds and responsibilities pressed in, Jesus regularly slipped away to quiet outdoor spaces to pray and commune with the Father. Nature exposure also lowers prefrontal cortex rumination.',
+    actionPrompt: 'Walk outside among the trees with no earbuds. Notice creation and converse openly with God.'
+  },
+  {
+    id: 'r-yoke',
+    title: 'The Easy Yoke Unburdening Pause',
+    durationMins: 15,
+    defaultTime: '17:30',
+    category: 'rest',
+    biblicalPrinciple: 'Matthew 11:28-30 • Exchanging Heavy Burdens',
+    wisdomSummary:
+      'Jesus invites the weary to trade self-imposed pressure for His gentle yoke. Mentally carrying unfinished work into family time creates chronic sympathetic nervous system tension.',
+    actionPrompt: 'Name the top 2 burdens you are carrying right now and consciously hand their outcomes over to Christ.'
+  }
+];
+
+const NIGHT_NEURO_MODULES = [
+  {
+    id: 'n-sunset',
+    title: 'Dim Overhead Lights & Digital Sunset',
+    durationMins: 30,
+    defaultTime: '20:45',
+    category: 'night',
+    neuroPrinciple: 'Melatonin Onset Protection & Habenula Shielding',
+    scienceSummary:
+      'Overhead bright white/blue light between 9 PM and 4 AM suppresses pineal melatonin and stimulates the lateral habenula (a brain region linked to mood dip and agitation). Switch to warm low lamps and step away from active troubleshooting.',
+    scriptureRef: 'Psalm 127:2',
+    scriptureInsight: 'God grants sleep to those He loves; we don’t have to stay wired late into the night.'
+  },
+  {
+    id: 'n-thermal',
+    title: 'Warm Shower Effect & Cool Bedroom Prep',
+    durationMins: 20,
+    defaultTime: '21:15',
+    category: 'night',
+    neuroPrinciple: 'Core Body Temperature Drop (-1°C) for Slow-Wave Sleep',
+    scienceSummary:
+      'To initiate deep slow-wave sleep, your core body temperature must drop by ~1–2°F. A warm shower dilates peripheral blood vessels in your hands and feet, rapidly dumping core heat once you step into a cool room.',
+    scriptureRef: 'Proverbs 3:24',
+    scriptureInsight: 'Preparing the body for unhurried, restorative rest.'
+  },
+  {
+    id: 'n-baylor',
+    title: '5-Minute Baylor Cognitive Offload + Stage Tomorrow',
+    durationMins: 10,
+    defaultTime: '21:35',
+    category: 'night',
+    neuroPrinciple: 'Closing the Zeigarnik Effect & Default Mode Network Loops',
+    scienceSummary:
+      'Baylor University’s polysomnography sleep lab found that writing a concrete list of tomorrow’s tasks for 5 minutes before bed significantly speeds up sleep onset compared to journaling about completed tasks, because it closes open working-memory loops.',
+    scriptureRef: 'Psalm 4:8',
+    scriptureInsight: 'Once tomorrow is entrusted to paper and to God, you can lie down and sleep in safety.'
+  }
+];
+
+const JOURNAL_FRAMEWORKS = [
+  {
+    id: 'baylor_offload',
+    name: '1. Baylor Lab 5-Min Cognitive Offload',
+    badge: 'Fastest Sleep Onset (Polysomnography Proven)',
+    scienceNote: 'Extinguishes the Zeigarnik Effect so your hippocampus stops pinging your prefrontal cortex at 2:00 AM.',
+    prompts: [
+      'What specific tasks or open loops are still circling in your head for tomorrow?',
+      'Which SINGLE item will you tackle first tomorrow morning? (Tap "Push #1 to Tomorrow’s Plan" below)'
+    ]
+  },
+  {
+    id: 'examen',
+    name: '2. The 5-Step Biblical Examen',
+    badge: 'Spiritual Discernment & Peace',
+    scienceNote: 'Shifts neural activity from threat-scanning to relational gratitude and spiritual attunement.',
+    prompts: [
+      'Consolation: Where did I experience God’s presence, peace, or love today?',
+      'Desolation: Where did I feel drained, impatient, or distant from God today, and what is He inviting me into tomorrow?'
+    ]
+  },
+  {
+    id: 'pennebaker',
+    name: '3. Pennebaker Expressive Emotional Unpacking',
+    badge: 'Affect Labeling & Amygdala Down-Regulation',
+    scienceNote: 'Putting raw feelings into words activates the right ventrolateral prefrontal cortex (rvlPFC), braking amygdala reactivity.',
+    prompts: [
+      'What unspoken frustration, worry, or mental weight from today needs to be named honestly without filtering?',
+      'Having named it, what truth or perspective helps reframe this weight?'
+    ]
+  },
+  {
+    id: 'narrative_gratitude',
+    name: '4. Story-Based Narrative Gratitude',
+    badge: 'Serotonin & Anterior Cingulate Activation',
+    scienceNote: 'Neuroscience shows reliving one specific story of kindness or beauty activates deeper neural reward circuits than a rote bullet list.',
+    prompts: [
+      'Describe ONE moment today—a conversation with Regla or family, an answered prayer, or a quiet moment—in vivid detail:',
+      'Why did this specific moment matter to your heart today?'
+    ]
+  },
+  {
+    id: 'closure_321',
+    name: '5. The 3-2-1 Evening Closure',
+    badge: 'Balanced Cognitive Compression',
+    scienceNote: 'Consolidates episodic memory with positive valence before REM sleep.',
+    prompts: [
+      '3 wins or gifts from today + 2 lessons or moments of growth:',
+      '1 priority intention or mindset for tomorrow:'
+    ]
+  },
+  {
+    id: 'psalm4_surrender',
+    name: '6. Psalm 4:8 Night Watch Surrender',
+    badge: 'Biblical Trust & Nervous System Release',
+    scienceNote: 'Consciously releasing control lowers nocturnal cortisol and nocturnal heart rate.',
+    prompts: [
+      'What outcomes, family needs, or projects are outside of my control tonight?',
+      'Write a short prayer handing the night watch over to the Lord who neither slumbers nor sleeps:'
+    ]
+  }
+];
+
+const JESUS_PRAYER_THEMES = [
+  {
+    id: 'jp-1',
+    theme: 'Adoration & Hallowing the Father’s Name',
+    reference: 'Matthew 6:9',
+    category: 'Adoration',
+    nasbLens: 'Structural Focus (NASB Study): Emphasizes the reverence due to our Father in heaven and asks that His name be treated as holy and set apart above every earthly concern.',
+    nltLens: 'Relational Focus (NLT Study): Invites us to approach God as a loving Father while praying that we—and the world around us—would honor His holy name.',
+    samplePrayer: 'Father, re-center my heart on Your holiness and faithfulness before I rush into my list of requests.'
+  },
+  {
+    id: 'jp-2',
+    theme: 'Kingdom Alignment & Surrendered Will',
+    reference: 'Matthew 6:10 • Luke 22:42',
+    category: 'Surrender',
+    nasbLens: 'Structural Focus (NASB Study): Prioritizes the arrival of God’s Kingdom rule and the accomplishment of His will on earth with the same readiness seen in heaven.',
+    nltLens: 'Relational Focus (NLT Study): Echoes Jesus’ prayer in Gethsemane—choosing the Father’s wise plan over our own comfort or control.',
+    samplePrayer: 'Lord, align my schedule, home, and decisions today with Your Kingdom purposes rather than my own ego.'
+  },
+  {
+    id: 'jp-3',
+    theme: 'Daily Bread & Present-Day Provision',
+    reference: 'Matthew 6:11 • Matthew 6:33-34',
+    category: 'Provision',
+    nasbLens: 'Structural Focus (NASB Study): The Greek term epiousios points to the bread needed for the coming day—teaching daily dependence rather than anxious hoarding.',
+    nltLens: 'Relational Focus (NLT Study): Encourages seeking God’s Kingdom first today and trusting Him to supply what our household needs one day at a time.',
+    samplePrayer: 'Give us the strength, wisdom, and provision we need for these next 24 hours, and free me from borrowing tomorrow’s worries.'
+  },
+  {
+    id: 'jp-4',
+    theme: 'Forgiveness, Mercy & Releasing Offenses',
+    reference: 'Matthew 6:12 • Mark 11:25',
+    category: 'Forgiveness',
+    nasbLens: 'Structural Focus (NASB Study): Links receiving the Father’s pardon for our moral debts with our active willingness to release those indebted to us.',
+    nltLens: 'Relational Focus (NLT Study): Calls us to drop grudges whenever we stand praying so bitterness never blocks fellowship with God.',
+    samplePrayer: 'Search my heart, Lord; forgive my impatience and help me release any frustration toward others quickly and completely.'
+  },
+  {
+    id: 'jp-5',
+    theme: 'Spiritual Protection & Deliverance from Temptation',
+    reference: 'Matthew 6:13 • Luke 22:40',
+    category: 'Protection',
+    nasbLens: 'Structural Focus (NASB Study): Petitions the Father to guide us away from testing traps and to rescue us from the schemes of the evil one.',
+    nltLens: 'Relational Focus (NLT Study): Keeps us watchful and prayerful so we do not slip into compromise when tired or stressed.',
+    samplePrayer: 'Guard my eyes, my tongue, and my mind today; lead me away from digital distraction and spiritual compromise.'
+  },
+  {
+    id: 'jp-6',
+    theme: 'Praying for Workers & Boldness in the Harvest',
+    reference: 'Luke 10:2 • Matthew 5:44',
+    category: 'Mission',
+    nasbLens: 'Structural Focus (NASB Study): Jesus commands His disciples to beseech the Lord of the harvest to send out laborers into His harvest field.',
+    nltLens: 'Relational Focus (NLT Study): Expands our prayers beyond our own circle to include coworkers, neighbors, church ministry teams, and even difficult people.',
+    samplePrayer: 'Lord of the harvest, bless our church serving teams and open doors for genuine gospel encouragement this week.'
+  },
+  {
+    id: 'jp-7',
+    theme: 'Unity, Love & Protection for Believers',
+    reference: 'John 17:15-21',
+    category: 'Family & Church',
+    nasbLens: 'Structural Focus (NASB Study): In His High Priestly Prayer, Jesus prays that believers would be sanctified in the truth and united as one.',
+    nltLens: 'Relational Focus (NLT Study): Highlights that our visible unity and love in marriage, family, and church point the world to Christ.',
+    samplePrayer: 'Knit my heart together with Regla and our family in patience, humility, and deep spiritual unity.'
+  },
+  {
+    id: 'jp-8',
+    theme: 'Abiding in the Vine & Asking in Faith',
+    reference: 'John 15:7 • Luke 11:9-13',
+    category: 'Intimacy',
+    nasbLens: 'Structural Focus (NASB Study): Remaining rooted in Christ and letting His words abide in us shapes our desires so we ask in harmony with His heart.',
+    nltLens: 'Relational Focus (NLT Study): Assures us that our heavenly Father delights to give the Holy Spirit and good gifts to His children who persistently ask, seek, and knock.',
+    samplePrayer: 'Jesus, keep me abiding in You throughout the middle of today’s tasks so my life bears lasting spiritual fruit.'
+  }
+];
+
+const INITIAL_PRAYER_CARDS = [
+  {
+    id: 'pc-1',
+    title: 'Regla — Peace, BSF & Serving Strength',
+    category: 'Marriage & Family',
+    scriptureTag: 'Ephesians 3:16-19',
+    notes: 'Pray for refreshment, joy in her BSF group at North Gate Church, and Sunday greeting ministry.',
+    prayedCount: 14,
+    lastPrayed: 'Yesterday',
+    isAnswered: false
+  },
+  {
+    id: 'pc-2',
+    title: 'Sunday Safety Team & Church Protection',
+    category: 'Church & Ministry',
+    scriptureTag: 'Psalm 127:1',
+    notes: 'Alertness, calm discernment, and warm hospitality for everyone arriving on campus.',
+    prayedCount: 9,
+    lastPrayed: '2 days ago',
+    isAnswered: false
+  },
+  {
+    id: 'pc-3',
+    title: 'Wisdom, Focus & Unhurried Spirit at Work',
+    category: 'Personal Walk',
+    scriptureTag: 'James 1:5 • Matthew 11:29',
+    notes: 'Carry the easy yoke of Jesus; work with excellence without internal hurry or anxiety.',
+    prayedCount: 18,
+    lastPrayed: 'Today',
+    isAnswered: false
+  },
+  {
+    id: 'pc-4',
+    title: 'Family Unity & Christ-Centered Home',
+    category: 'Marriage & Family',
+    scriptureTag: 'Colossians 3:12-15',
+    notes: 'Let the peace of Christ rule in our home and table conversations.',
+    prayedCount: 21,
+    lastPrayed: 'Yesterday',
+    isAnswered: false
+  }
+];
+
+const INITIAL_GOALS = [
+  {
+    id: 'goal-1',
+    title: 'Consistent Morning Sunlight, Mobility & Scripture Before Screens',
+    identityStatement: 'I am a disciplined Christian steward who orders his mind and body before the digital world wakes up.',
+    wish: 'Complete my 35-minute morning protocol 6 days a week.',
+    outcome: 'Steadier energy, healthier joints, and deeper spiritual groundedness before work.',
+    obstacle: 'Checking phone notifications or email in bed right after the alarm.',
+    ifThenPlan: 'IF my alarm goes off at 6:00 AM, THEN I immediately drink 16oz water and open my Bible before unlocking any browser or email app.',
+    progressPct: 75,
+    streakDays: 6,
+    amccFrictionScore: 8,
+    status: 'active'
+  },
+  {
+    id: 'goal-2',
+    title: 'Joint & Tendon Longevity + Strength Conditioning',
+    identityStatement: 'I am an athlete building durable joints and cardiovascular capacity for decades of active life.',
+    wish: 'Hit 4 structured strength/mobility sessions and 2 zone-2/spin sessions weekly.',
+    outcome: 'Zero tendon flare-ups and high physical resilience for yard projects and family life.',
+    obstacle: 'Feeling stiff or mentally drained at 4:30 PM after desk work.',
+    ifThenPlan: 'IF I feel low energy at 4:30 PM, THEN I put on workout shoes and commit to just 10 minutes of joint warm-up on the mat.',
+    progressPct: 60,
+    streakDays: 4,
+    amccFrictionScore: 7,
+    status: 'active'
+  },
+  {
+    id: 'goal-3',
+    title: '21:30 Digital Sunset & Nightly Examen / Offload',
+    identityStatement: 'I am a restful man who trusts God with unfinished work and protects deep sleep.',
+    wish: 'Shut down code/screens by 9:30 PM and complete a 5-minute journal offload.',
+    outcome: 'Faster sleep onset, deeper slow-wave recovery, and waking up clear-headed.',
+    obstacle: 'Getting pulled into late-night coding fixes or hardware tinkering.',
+    ifThenPlan: 'IF it hits 9:15 PM and I am mid-project, THEN I write the next step in my Baylor Offload journal and close the laptop.',
+    progressPct: 50,
+    streakDays: 3,
+    amccFrictionScore: 6,
+    status: 'active'
+  }
+];
+
+const INITIAL_CODED_SITES = [
+  {
+    id: 'site-1',
+    title: 'Custom Web Radio Streamer',
+    tagline: 'Distraction-free internet radio player with curated station presets and instant audio toggle.',
+    url: 'https://radio.example.com',
+    repoUrl: 'https://github.com/',
+    category: 'Audio & Media',
+    status: 'Live',
+    techStack: ['HTML5 Audio', 'Tailwind', 'JavaScript'],
+    nextTodo: 'Add sleep timer and favorite station export button.',
+    accent: 'indigo'
+  },
+  {
+    id: 'site-2',
+    title: 'Family & Table Conversation Cards',
+    tagline: 'Interactive swipeable question decks for meaningful dinners, marriage check-ins, and faith talks.',
+    url: 'https://cards.example.com',
+    repoUrl: 'https://github.com/',
+    category: 'Family & Faith',
+    status: 'Live',
+    techStack: ['React', 'Tailwind', 'LocalStorage'],
+    nextTodo: 'Add a "Sunday Reflection" deck with NLT/NASB prompts.',
+    accent: 'amber'
+  },
+  {
+    id: 'site-3',
+    title: 'Life OS — Swiss Army Knife',
+    tagline: 'Single-device personal command center for filtered calendars, neuroscience routines, prayer & goals.',
+    url: 'https://lifeos.local',
+    repoUrl: 'https://github.com/',
+    category: 'Productivity',
+    status: 'Live',
+    techStack: ['React', 'Tailwind', 'JSON Vault'],
+    nextTodo: 'Export weekly JSON snapshot every Sunday evening.',
+    accent: 'emerald'
+  },
+  {
+    id: 'site-4',
+    title: 'Workout & Tendon Load Tracker',
+    tagline: 'Lightweight tracker for spin intervals, lifting volume, and joint recovery readiness.',
+    url: 'https://fitness.example.com',
+    repoUrl: 'https://github.com/',
+    category: 'Health',
+    status: 'WIP',
+    techStack: ['HTML', 'JS', 'Charting'],
+    nextTodo: 'Add isometric tendon hold timer.',
+    accent: 'rose'
+  }
+];
+
+const INITIAL_PLAN_BLOCKS = [
+  { id: 'pb-1', title: 'Electrolyte Hydration & 90-Min Caffeine Delay', startTime: '06:15', durationMins: 10, category: 'morning', completed: true, dayOffset: 0 },
+  { id: 'pb-2', title: 'Low-Solar-Angle Sunlight + Optic Flow Walk', startTime: '06:30', durationMins: 12, category: 'morning', completed: true, dayOffset: 0 },
+  { id: 'pb-3', title: 'Scripture Before Screens (No-Scroll First Hour)', startTime: '07:00', durationMins: 15, category: 'morning', completed: false, dayOffset: 0 },
+  { id: 'pb-4', title: 'Morning P.R.A.Y. Sanctuary & Intercession Deck', startTime: '07:20', durationMins: 15, category: 'prayer', completed: false, dayOffset: 0 },
+  { id: 'pb-5', title: 'Menuha Stillness Block (Zero Production)', startTime: '14:30', durationMins: 20, category: 'rest', completed: false, dayOffset: 0 },
+  { id: 'pb-6', title: '5-Minute Baylor Cognitive Offload + Stage Tomorrow', startTime: '21:35', durationMins: 10, category: 'night', completed: false, dayOffset: 0 }
+];
+
+// ============================================================================
+// DETERMINISTIC SVG QR CODE GENERATOR (FOR DEV LAUNCHPAD)
+// ============================================================================
+function PseudoQrPattern({ seedText = 'https://example.com' }) {
+  const cells = useMemo(() => {
+    let hash = 2166136261;
+    for (let i = 0; i < seedText.length; i++) {
+      hash ^= seedText.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    const grid = [];
+    for (let r = 0; r < 11; r++) {
+      const row = [];
+      for (let c = 0; c < 11; c++) {
+        const isCorner = (r < 3 && c < 3) || (r < 3 && c > 7) || (r > 7 && c < 3);
+        if (isCorner) {
+          row.push(true);
+        } else {
+          const bit = ((hash >>> ((r * 11 + c) % 24)) ^ (r * 7 + c * 13)) & 1;
+          row.push(bit === 1);
+        }
+      }
+      grid.push(row);
+    }
+    return grid;
+  }, [seedText]);
+
+  return (
+    <svg viewBox="0 0 11 11" className="w-28 h-28 bg-white p-2 rounded-xl shadow-inner">
+      {cells.map((row, rIdx) =>
+        row.map((filled, cIdx) =>
+          filled ? <rect key={`${rIdx}-${cIdx}`} x={cIdx} y={rIdx} width={0.92} height={0.92} fill="#0f172a" rx={0.15} /> : null
+        )
+      )}
+    </svg>
+  );
+}
+
+// ============================================================================
+// MAIN APPLICATION COMPONENT
+// ============================================================================
+export default function App() {
+  const loadState = (key, fallback) => {
+    try {
+      const raw = localStorage.getItem(`lifeos_v2_${key}`);
+      return raw ? JSON.parse(raw) : fallback;
+    } catch {
+      return fallback;
+    }
+  };
+
+  const [activeTab, setActiveTab] = useState('calendar');
+  const [settings, setSettings] = useState(() => loadState('settings', INITIAL_SETTINGS));
+  const [gcalEvents, setGcalEvents] = useState(() => loadState('gcalEvents', INITIAL_GCAL_EVENTS));
+  const [planBlocks, setPlanBlocks] = useState(() => loadState('planBlocks', INITIAL_PLAN_BLOCKS));
+  const [planLocked, setPlanLocked] = useState(() => loadState('planLocked', false));
+  const [lists, setLists] = useState(() => loadState('lists', INITIAL_LISTS));
+  const [journalEntries, setJournalEntries] = useState(() => loadState('journalEntries', []));
+  const [prayerCards, setPrayerCards] = useState(() => loadState('prayerCards', INITIAL_PRAYER_CARDS));
+  const [goals, setGoals] = useState(() => loadState('goals', INITIAL_GOALS));
+  const [codedSites, setCodedSites] = useState(() => loadState('codedSites', INITIAL_CODED_SITES));
+  const [dailyAmccScore, setDailyAmccScore] = useState(() => loadState('dailyAmccScore', 7));
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('lifeos_v2_settings', JSON.stringify(settings));
+      localStorage.setItem('lifeos_v2_gcalEvents', JSON.stringify(gcalEvents));
+      localStorage.setItem('lifeos_v2_planBlocks', JSON.stringify(planBlocks));
+      localStorage.setItem('lifeos_v2_planLocked', JSON.stringify(planLocked));
+      localStorage.setItem('lifeos_v2_lists', JSON.stringify(lists));
+      localStorage.setItem('lifeos_v2_journalEntries', JSON.stringify(journalEntries));
+      localStorage.setItem('lifeos_v2_prayerCards', JSON.stringify(prayerCards));
+      localStorage.setItem('lifeos_v2_goals', JSON.stringify(goals));
+      localStorage.setItem('lifeos_v2_codedSites', JSON.stringify(codedSites));
+      localStorage.setItem('lifeos_v2_dailyAmccScore', JSON.stringify(dailyAmccScore));
+    } catch {
+      // Ignore quota errors
+    }
+  }, [settings, gcalEvents, planBlocks, planLocked, lists, journalEntries, prayerCards, goals, codedSites, dailyAmccScore]);
+
+  const [toast, setToast] = useState(null);
+  const showToast = (msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3200);
+  };
+
+  // Sub-view UI States
+  const [selectedDayOffset, setSelectedDayOffset] = useState(0);
+  const [peekFilteredEvents, setPeekFilteredEvents] = useState(false);
+  const [newCustomEvent, setNewCustomEvent] = useState({ title: '', startTime: '14:00', durationMins: 30, dayOffset: 0 });
+  const [mobilePlanViewMode, setMobilePlanViewMode] = useState('unified'); // 'unified' | 'plan' | 'gcal'
+  const [showGcalSyncModal, setShowGcalSyncModal] = useState(false);
+  const [isSyncingGcal, setIsSyncingGcal] = useState(false);
+  const [gcalAccessToken, setGcalAccessToken] = useState(null);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+
+  // Family Wall List States
+  const [newListTitle, setNewListTitle] = useState('');
+  const [newListCategory, setNewListCategory] = useState('Family');
+  const [listItemDrafts, setListItemDrafts] = useState({});
+
+  // Night Journaling Studio States
+  const [selectedJournalMode, setSelectedJournalMode] = useState('baylor_offload');
+  const [journalResponseA, setJournalResponseA] = useState('');
+  const [journalResponseB, setJournalResponseB] = useState('');
+
+  // Prayer Experience States
+  const [prayerSubTab, setPrayerSubTab] = useState('deck'); // 'deck' | 'guided' | 'jesus_teachings' | 'answered'
+  const [guidedStepIndex, setGuidedStepIndex] = useState(0);
+  const [newPrayerTitle, setNewPrayerTitle] = useState('');
+  const [newPrayerCategory, setNewPrayerCategory] = useState('Marriage & Family');
+  const [newPrayerScripture, setNewPrayerScripture] = useState('');
+  const [newPrayerNotes, setNewPrayerNotes] = useState('');
+
+  // Goal Experience States
+  const [showNewGoalForm, setShowNewGoalForm] = useState(false);
+  const [goalDraft, setGoalDraft] = useState({
+    title: '',
+    identityStatement: '',
+    wish: '',
+    outcome: '',
+    obstacle: '',
+    ifThenPlan: ''
+  });
+
+  // Dev Launchpad States
+  const [showNewSiteForm, setShowNewSiteForm] = useState(false);
+  const [qrModalSite, setQrModalSite] = useState(null);
+  const [siteDraft, setSiteDraft] = useState({
+    title: '',
+    tagline: '',
+    url: 'https://',
+    repoUrl: 'https://github.com/',
+    category: 'Utility',
+    status: 'Live',
+    techStack: 'HTML, Tailwind, JS',
+    nextTodo: ''
+  });
+
+  // Settings States
+  const [newFilterKeyword, setNewFilterKeyword] = useState('');
+  const [rawJsonImportText, setRawJsonImportText] = useState('');
+
+  // ============================================================================
+  // HELPER FUNCTIONS: CALENDAR FILTERING & 24-HOUR PLANNER
+  // ============================================================================
+  const isEventMutedByWifeFilter = (event) => {
+    if (!settings.wifeFilterEnabled) return false;
+    const isWifeCal = event.calendar.toLowerCase().includes('wife');
+    if (!isWifeCal) return false;
+    if (settings.hideShortSoloEvents && event.isSoloReminder) return true;
+    const titleLower = event.title.toLowerCase();
+    return settings.wifeFilterKeywords.some((kw) => titleLower.includes(kw.toLowerCase()));
+  };
+
+  const addBlockTo24hPlan = ({ title, startTime = '08:00', durationMins = 15, category = 'morning', dayOffset = 0 }) => {
+    if (planLocked) {
+      showToast('Your 24-Hour Plan is currently locked! Unlock it to add new blocks.', 'warning');
+      return;
+    }
+    const newBlock = {
+      id: `pb-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      title,
+      startTime,
+      durationMins: Number(durationMins) || 15,
+      category,
+      completed: false,
+      dayOffset
+    };
+    setPlanBlocks((prev) => [...prev, newBlock].sort((a, b) => a.startTime.localeCompare(b.startTime)));
+    showToast(`Added "${title}" to your 24-Hour Plan (${startTime})`);
+  };
+
+  const togglePlanBlockComplete = (blockId) => {
+    setPlanBlocks((prev) => prev.map((b) => (b.id === blockId ? { ...b, completed: !b.completed } : b)));
+  };
+
+  const deletePlanBlock = (blockId) => {
+    if (planLocked) {
+      showToast('Unlock the 24-Hour Plan to remove blocks.', 'warning');
+      return;
+    }
+    setPlanBlocks((prev) => prev.filter((b) => b.id !== blockId));
+  };
+
+  // ============================================================================
+  // LIVE GOOGLE CALENDAR OAUTH 2.0 & ICS SYNC ENGINE (CLIENT-SIDE)
+  // ============================================================================
+  const loadGoogleIdentityScript = () => {
+    return new Promise((resolve, reject) => {
+      if (window.google?.accounts?.oauth2) {
+        resolve(window.google.accounts.oauth2);
+        return;
+      }
+      const existing = document.getElementById('google-gsi-client');
+      if (existing) {
+        existing.addEventListener('load', () => resolve(window.google?.accounts?.oauth2));
+        return;
+      }
+      const script = document.createElement('script');
+      script.id = 'google-gsi-client';
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = () => resolve(window.google?.accounts?.oauth2);
+      script.onerror = () => reject(new Error('Failed to load Google OAuth script'));
+      document.head.appendChild(script);
+    });
+  };
+
+  const fetchGoogleCalendarsAndEvents = async (accessToken) => {
+    setIsSyncingGcal(true);
+    try {
+      const calListRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (!calListRes.ok) throw new Error('Could not fetch calendar list');
+      const calListData = await calListRes.json();
+      const calendars = calListData.items || [];
+
+      const now = new Date();
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const endOfHorizon = new Date(startOfToday.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+      const allFetchedEvents = [];
+
+      for (const cal of calendars) {
+        const params = new URLSearchParams({
+          timeMin: startOfToday.toISOString(),
+          timeMax: endOfHorizon.toISOString(),
+          singleEvents: 'true',
+          orderBy: 'startTime',
+          maxResults: '50'
+        });
+
+        const evRes = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cal.id)}/events?${params.toString()}`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+        if (!evRes.ok) continue;
+        const evData = await evRes.json();
+
+        const isWifeOrShared =
+          cal.summary?.toLowerCase().includes('regla') ||
+          cal.id?.toLowerCase().includes('regla') ||
+          cal.accessRole === 'reader';
+
+        const calLabel = isWifeOrShared
+          ? `Wife Shared (${cal.summary || cal.id.split('@')[0]})`
+          : cal.primary
+          ? `Primary (${cal.summary || 'Me'})`
+          : cal.summary || 'Shared';
+
+        for (const item of evData.items || []) {
+          if (item.status === 'cancelled') continue;
+          const rawStart = item.start?.dateTime || item.start?.date;
+          const rawEnd = item.end?.dateTime || item.end?.date;
+          if (!rawStart) continue;
+
+          const startDate = new Date(rawStart);
+          const endDate = rawEnd ? new Date(rawEnd) : new Date(startDate.getTime() + 30 * 60000);
+
+          const eventDayMidnight = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+          const dayOffset = Math.max(0, Math.round((eventDayMidnight - startOfToday) / (1000 * 60 * 60 * 24)));
+
+          const formatHHMM = (d, isAllDay) => {
+            if (isAllDay) return '08:00';
+            return d.toTimeString().slice(0, 5);
+          };
+
+          const isAllDay = Boolean(item.start?.date && !item.start?.dateTime);
+          const durationMins = Math.round((endDate - startDate) / 60000);
+          const hasMultipleAttendees = (item.attendees || []).length > 1;
+
+          allFetchedEvents.push({
+            id: `gcal-${item.id}`,
+            dayOffset,
+            startTime: formatHHMM(startDate, isAllDay),
+            endTime: isAllDay ? 'All Day' : formatHHMM(endDate, false),
+            title: item.summary || '(Untitled Event)',
+            calendar: calLabel,
+            isSoloReminder: isWifeOrShared && !hasMultipleAttendees && (isAllDay || durationMins <= 60),
+            location: item.location || (isAllDay ? 'All-Day Event' : '')
+          });
+        }
+      }
+
+      if (allFetchedEvents.length > 0) {
+        allFetchedEvents.sort((a, b) => a.dayOffset - b.dayOffset || a.startTime.localeCompare(b.startTime));
+        setGcalEvents(allFetchedEvents);
+        setSettings((prev) => ({
+          ...prev,
+          lastGcalSync: `Live OAuth Sync · ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+        }));
+        showToast(`Synced ${allFetchedEvents.length} live events across your Google Calendars!`);
+      } else {
+        showToast('Connected to Google Calendar (0 events found in the next 7 days).');
+      }
+    } catch (err) {
+      showToast(`Sync error: ${err.message}`, 'warning');
+    } finally {
+      setIsSyncingGcal(false);
+    }
+  };
+
+  const handleConnectGoogleOAuth = async () => {
+    const clientId = (settings.gcalClientId || '').trim();
+    if (!clientId) {
+      setShowGcalSyncModal(true);
+      showToast('Enter your Google OAuth Client ID first (see 3-step guide).', 'warning');
+      return;
+    }
+    try {
+      const oauth2 = await loadGoogleIdentityScript();
+      const tokenClient = oauth2.initTokenClient({
+        client_id: clientId,
+        scope: 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events',
+        callback: (tokenResponse) => {
+          if (tokenResponse && tokenResponse.access_token) {
+            setGcalAccessToken(tokenResponse.access_token);
+            fetchGoogleCalendarsAndEvents(tokenResponse.access_token);
+            setShowGcalSyncModal(false);
+          }
+        }
+      });
+      tokenClient.requestAccessToken({ prompt: 'consent' });
+    } catch {
+      showToast('Could not initialize Google Sign-In.', 'warning');
+    }
+  };
+
+  const pushBlockToLiveGoogleCalendar = async (block) => {
+    if (!gcalAccessToken) {
+      setShowGcalSyncModal(true);
+      showToast('Connect Google Calendar OAuth first to push blocks to Google.', 'warning');
+      return;
+    }
+    try {
+      const now = new Date();
+      const targetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + (block.dayOffset || 0));
+      const [hh, mm] = (block.startTime || '08:00').split(':').map(Number);
+      const startDateTime = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), hh || 8, mm || 0);
+      const endDateTime = new Date(startDateTime.getTime() + (block.durationMins || 30) * 60000);
+
+      const res = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${gcalAccessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          summary: block.title,
+          description: `Added from Life OS 24-Hour Plan (${block.category})`,
+          start: { dateTime: startDateTime.toISOString() },
+          end: { dateTime: endDateTime.toISOString() }
+        })
+      });
+      if (!res.ok) throw new Error('Failed to create event on Google Calendar');
+      showToast(`Pushed "${block.title}" to your primary Google Calendar!`);
+    } catch (err) {
+      showToast(err.message, 'warning');
+    }
+  };
+
+  const handleIcsFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const raw = evt.target.result || '';
+        const vevents = raw.split('BEGIN:VEVENT').slice(1);
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const parsedEvents = [];
+
+        vevents.forEach((chunk, idx) => {
+          const getLine = (prefix) => {
+            const match = chunk.match(new RegExp(`^${prefix}[^:]*:(.*)$`, 'm'));
+            return match ? match[1].trim() : '';
+          };
+          const summary = getLine('SUMMARY') || 'Calendar Event';
+          const location = getLine('LOCATION') || '';
+          const dtStartRaw = getLine('DTSTART');
+          if (!dtStartRaw) return;
+
+          const year = Number(dtStartRaw.slice(0, 4));
+          const month = Number(dtStartRaw.slice(4, 6)) - 1;
+          const day = Number(dtStartRaw.slice(6, 8));
+          const hour = dtStartRaw.includes('T') ? Number(dtStartRaw.slice(9, 11)) : 8;
+          const min = dtStartRaw.includes('T') ? Number(dtStartRaw.slice(11, 13)) : 0;
+
+          const evDate = new Date(year, month, day);
+          const dayOffset = Math.round((evDate - startOfToday) / (1000 * 60 * 60 * 24));
+          if (dayOffset < -1 || dayOffset > 14) return;
+
+          const hh = String(hour).padStart(2, '0');
+          const mm = String(min).padStart(2, '0');
+
+          parsedEvents.push({
+            id: `ics-${Date.now()}-${idx}`,
+            dayOffset: Math.max(0, dayOffset),
+            startTime: `${hh}:${mm}`,
+            endTime: `${String(Math.min(23, hour + 1)).padStart(2, '0')}:${mm}`,
+            title: summary,
+            calendar: file.name.toLowerCase().includes('regla') ? 'Wife Shared (.ics)' : 'Imported .ics Calendar',
+            isSoloReminder: false,
+            location
+          });
+        });
+
+        if (parsedEvents.length > 0) {
+          setGcalEvents((prev) => [...parsedEvents, ...prev]);
+          setSettings((prev) => ({ ...prev, lastGcalSync: `ICS Import (${parsedEvents.length} events)` }));
+          setShowGcalSyncModal(false);
+          showToast(`Imported ${parsedEvents.length} upcoming events from .ics file!`);
+        } else {
+          showToast('No events found within the next 14 days in that .ics file.', 'warning');
+        }
+      } catch {
+        showToast('Could not parse .ics file.', 'warning');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // ============================================================================
+  // HELPER FUNCTIONS: DATA IMPORT / EXPORT & STORAGE METRICS
+  // ============================================================================
+  const getFullBackupObject = () => ({
+    app: 'LifeOS_SwissArmyKnife',
+    version: '2.0',
+    exportedAt: new Date().toISOString(),
+    settings,
+    gcalEvents,
+    planBlocks,
+    planLocked,
+    lists,
+    journalEntries,
+    prayerCards,
+    goals,
+    codedSites,
+    dailyAmccScore
+  });
+
+  const handleDownloadBackupJson = () => {
+    const payload = getFullBackupObject();
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `LifeOS_Backup_${dateStamp}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setSettings((prev) => ({ ...prev, lastExportDate: new Date().toLocaleString() }));
+    showToast('Downloaded full Life OS JSON backup!');
+  };
+
+  const applyImportedPayload = (parsed) => {
+    if (!parsed || typeof parsed !== 'object') {
+      showToast('Invalid JSON backup format.', 'warning');
+      return;
+    }
+    if (parsed.settings) setSettings(parsed.settings);
+    if (Array.isArray(parsed.gcalEvents)) setGcalEvents(parsed.gcalEvents);
+    if (Array.isArray(parsed.planBlocks)) setPlanBlocks(parsed.planBlocks);
+    if (typeof parsed.planLocked === 'boolean') setPlanLocked(parsed.planLocked);
+    if (Array.isArray(parsed.lists)) setLists(parsed.lists);
+    if (Array.isArray(parsed.journalEntries)) setJournalEntries(parsed.journalEntries);
+    if (Array.isArray(parsed.prayerCards)) setPrayerCards(parsed.prayerCards);
+    if (Array.isArray(parsed.goals)) setGoals(parsed.goals);
+    if (Array.isArray(parsed.codedSites)) setCodedSites(parsed.codedSites);
+    if (typeof parsed.dailyAmccScore === 'number') setDailyAmccScore(parsed.dailyAmccScore);
+    showToast('Restored all Life OS data from backup!');
+  };
+
+  const handleFileImport = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const parsed = JSON.parse(evt.target.result);
+        applyImportedPayload(parsed);
+      } catch {
+        showToast('Could not parse JSON file.', 'warning');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const storageBytesUsed = useMemo(() => {
+    try {
+      const str = JSON.stringify(getFullBackupObject());
+      return new Blob([str]).size;
+    } catch {
+      return 0;
+    }
+  }, [settings, gcalEvents, planBlocks, lists, journalEntries, prayerCards, goals, codedSites]);
+
+  // ============================================================================
+  // NAVIGATION CONFIGURATION
+  // ============================================================================
+  const navItems = [
+    { id: 'calendar', label: '24h Plan & Cal', shortLabel: '24h Plan', icon: Calendar, badge: planBlocks.filter((b) => b.dayOffset === 0 && !b.completed).length },
+    { id: 'lists', label: 'Family Wall Lists', shortLabel: 'Lists', icon: CheckSquare, badge: lists.reduce((acc, l) => acc + l.items.filter((i) => !i.completed).length, 0) },
+    { id: 'morning', label: 'Morning & Rest', shortLabel: 'Morning', icon: Sun },
+    { id: 'night', label: 'Night & Journal', shortLabel: 'Night', icon: Moon },
+    { id: 'prayer', label: 'Prayer Sanctuary', shortLabel: 'Prayer', icon: Heart },
+    { id: 'goals', label: 'Goal Engine', shortLabel: 'Goals', icon: Target },
+    { id: 'launchpad', label: 'Coded Sites', shortLabel: 'Sites', icon: Code },
+    { id: 'settings', label: 'Settings & Backup', shortLabel: 'Backup', icon: Settings }
+  ];
+
+  const activeGoalsList = useMemo(() => goals.filter((g) => g.status === 'active'), [goals]);
+
+  const primaryMobileDock = [
+    { id: 'calendar', label: '24h Plan', icon: Calendar, badge: planBlocks.filter((b) => b.dayOffset === 0 && !b.completed).length },
+    { id: 'lists', label: 'Lists', icon: CheckSquare, badge: lists.reduce((acc, l) => acc + l.items.filter((i) => !i.completed).length, 0) },
+    { id: 'morning', label: 'Routines', icon: Sun, matchIds: ['morning', 'night'] },
+    { id: 'prayer', label: 'Prayer', icon: Heart },
+    { id: 'goals', label: 'Goals', icon: Target }
+  ];
+
+  const unifiedMobileTimeline = useMemo(() => {
+    const dayFilter = selectedDayOffset > 1 ? 1 : selectedDayOffset;
+    const planItems = planBlocks
+      .filter((b) => b.dayOffset === dayFilter)
+      .map((b) => ({
+        ...b,
+        streamType: 'plan_block',
+        sortTime: b.startTime || '08:00'
+      }));
+
+    const calItems = gcalEvents
+      .filter((ev) => (selectedDayOffset === 2 ? ev.dayOffset >= 2 : ev.dayOffset === selectedDayOffset))
+      .filter((ev) => peekFilteredEvents || !isEventMutedByWifeFilter(ev))
+      .map((ev) => ({
+        ...ev,
+        streamType: 'gcal_event',
+        isMuted: isEventMutedByWifeFilter(ev),
+        sortTime: ev.startTime || '08:00'
+      }));
+
+    return [...calItems, ...planItems].sort((a, b) => a.sortTime.localeCompare(b.sortTime));
+  }, [planBlocks, gcalEvents, selectedDayOffset, peekFilteredEvents, settings]);
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col md:flex-row font-sans selection:bg-emerald-500/30 selection:text-emerald-200">
+      {/* TOAST FEEDBACK BANNER */}
+      {toast && (
+        <div className="fixed bottom-20 left-3 right-3 md:left-auto md:bottom-6 md:right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-2xl border backdrop-blur-md transition-all bg-slate-900/95 border-emerald-500/50 text-emerald-200">
+          <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span className="text-xs sm:text-sm font-medium">{toast.msg}</span>
+        </div>
+      )}
+
+      {/* LIVE GOOGLE CALENDAR SYNC MODAL */}
+      {showGcalSyncModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-slate-900 border-t sm:border border-slate-700 rounded-t-3xl sm:rounded-2xl p-5 sm:p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-emerald-500/15 text-emerald-400">
+                  <RefreshCw className={`w-5 h-5 ${isSyncingGcal ? 'animate-spin' : ''}`} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-white">Sync Real Google Calendar</h3>
+                  <p className="text-xs text-slate-400">{settings.lastGcalSync}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowGcalSyncModal(false)}
+                className="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Option 1: Direct Google OAuth 2.0 Live Sync */}
+            <div className="p-4 rounded-2xl bg-slate-950/90 border border-emerald-500/30 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">
+                  Option 1: Live 2-Way Google OAuth Sync
+                </span>
+                {gcalAccessToken && (
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold">
+                    Connected
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Connect directly from your phone’s browser to pull live events from your Primary, Family, and Regla’s shared calendars—and automatically mute personal reminders using your Wife Filter.
+              </p>
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold text-slate-400 block">
+                  Your Google Cloud OAuth Client ID (Saved on this phone):
+                </label>
+                <input
+                  type="text"
+                  placeholder="123456789-abc...apps.googleusercontent.com"
+                  value={settings.gcalClientId || ''}
+                  onChange={(e) => setSettings((s) => ({ ...s, gcalClientId: e.target.value }))}
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-base sm:text-xs text-white font-mono focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <button
+                onClick={handleConnectGoogleOAuth}
+                disabled={isSyncingGcal}
+                className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm flex items-center justify-center gap-2 shadow-lg transition"
+              >
+                <RefreshCw className={`w-4 h-4 ${isSyncingGcal ? 'animate-spin' : ''}`} />
+                {gcalAccessToken ? 'Refresh Live Google Calendar Now' : 'Sign In & Sync Google Calendar'}
+              </button>
+
+              <details className="text-xs text-slate-400 pt-1">
+                <summary className="cursor-pointer text-emerald-300 font-medium">
+                  How do I get a free Client ID in 2 minutes?
+                </summary>
+                <ol className="list-decimal list-inside space-y-1 mt-2 text-slate-300 bg-slate-900 p-3 rounded-xl border border-slate-800">
+                  <li>Go to <strong>console.cloud.google.com</strong> and enable the <strong>Google Calendar API</strong>.</li>
+                  <li>Under <strong>Credentials → Create Credentials → OAuth Client ID</strong>, choose <strong>Web application</strong>.</li>
+                  <li>Add this page’s URL to <strong>Authorized JavaScript origins</strong> and paste your Client ID above.</li>
+                </ol>
+              </details>
+            </div>
+
+            {/* Option 2: Zero-Setup .ICS File Import */}
+            <div className="p-4 rounded-2xl bg-slate-950/90 border border-slate-800 space-y-2.5">
+              <span className="text-xs font-bold uppercase tracking-wider text-indigo-400 block">
+                Option 2: Instant .ICS Calendar File Import (Zero Setup)
+              </span>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Export or download an `.ics` file from Google Calendar or Apple Calendar on your phone and tap below to load all upcoming events immediately.
+              </p>
+              <label className="w-full py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer border border-slate-700 transition">
+                <Upload className="w-4 h-4 text-indigo-400" />
+                Select .ICS Calendar File from Phone
+                <input type="file" accept=".ics,text/calendar" onChange={handleIcsFileUpload} className="hidden" />
+              </label>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MOBILE SLIDE-UP QUICK DRAWER */}
+      {mobileDrawerOpen && (
+        <div className="md:hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-end">
+          <div className="bg-slate-900 border-t border-slate-700 rounded-t-3xl p-5 w-full space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">All Life OS Modules</span>
+              <button
+                onClick={() => setMobileDrawerOpen(false)}
+                className="p-1.5 rounded-xl bg-slate-800 text-slate-400"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setActiveTab(item.id);
+                      setMobileDrawerOpen(false);
+                    }}
+                    className={`flex items-center gap-3 p-3.5 rounded-2xl border text-left transition ${
+                      isActive
+                        ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                        : 'bg-slate-950 border-slate-800 text-slate-200'
+                    }`}
+                  >
+                    <Icon className="w-5 h-5 text-emerald-400 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold truncate">{item.shortLabel}</p>
+                      <p className="text-[10px] text-slate-400 truncate">{item.label}</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-slate-800">
+              <button
+                onClick={() => {
+                  setMobileDrawerOpen(false);
+                  setShowGcalSyncModal(true);
+                }}
+                className="py-3 px-3 rounded-xl bg-indigo-500/20 border border-indigo-500/30 text-indigo-200 text-xs font-bold flex items-center justify-center gap-1.5"
+              >
+                <RefreshCw className="w-4 h-4" /> Sync Google Cal
+              </button>
+              <button
+                onClick={() => {
+                  setMobileDrawerOpen(false);
+                  handleDownloadBackupJson();
+                }}
+                className="py-3 px-3 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-200 text-xs font-bold flex items-center justify-center gap-1.5"
+              >
+                <Download className="w-4 h-4" /> Backup JSON
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SIDEBAR NAVIGATION (DESKTOP) */}
+      <aside className="hidden md:flex md:w-64 lg:w-72 bg-slate-900/80 border-r border-slate-800/80 flex-col justify-between p-4 shrink-0">
+        <div>
+          <div className="flex items-center justify-between px-2 py-3 mb-4 border-b border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-950">
+                <Compass className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h1 className="font-bold text-base tracking-tight text-white">Life OS</h1>
+                <p className="text-xs text-slate-400">Swiss Army Command Center</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowGcalSyncModal(true)}
+              className="p-2 rounded-xl bg-slate-800 hover:bg-emerald-500/20 text-emerald-400 transition"
+              title="Sync Google Calendar"
+            >
+              <RefreshCw className={`w-4 h-4 ${isSyncingGcal ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+
+          <nav className="space-y-1">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id)}
+                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                    isActive
+                      ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Icon className={`w-4 h-4 ${isActive ? 'text-emerald-400' : 'text-slate-400'}`} />
+                    <span>{item.label}</span>
+                  </div>
+                  {item.badge !== undefined && (
+                    <span
+                      className={`text-xs px-2 py-0.5 rounded-full ${
+                        isActive ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-800 text-slate-400'
+                      }`}
+                    >
+                      {item.badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+
+        {/* SIDEBAR FOOTER: QUICK BACKUP STATUS */}
+        <div className="mt-6 pt-4 border-t border-slate-800/80 space-y-3">
+          <div className="bg-slate-950/70 rounded-xl p-3 border border-slate-800/80 space-y-2">
+            <div className="flex items-center justify-between text-xs text-slate-400">
+              <span>Single-Device Vault</span>
+              <span className="text-emerald-400 font-medium">{(storageBytesUsed / 1024).toFixed(1)} KB</span>
+            </div>
+            <button
+              onClick={() => setShowGcalSyncModal(true)}
+              className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 text-xs font-semibold text-indigo-200 transition"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Sync Google Calendar
+            </button>
+            <button
+              onClick={handleDownloadBackupJson}
+              className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 transition"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-400" />
+              Quick Export JSON
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* MAIN CONTENT AREA */}
+      <div className="flex-1 flex flex-col min-w-0 pb-24 md:pb-0">
+        {/* STICKY PORTRAIT MOBILE APP BAR + GOAL HORIZON CUE */}
+        <header className="sticky top-0 z-30 bg-slate-950/90 backdrop-blur-md border-b border-slate-800/80 px-3.5 sm:px-6 py-2.5">
+          <div className="max-w-6xl mx-auto space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-md">
+                  <Compass className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-bold text-sm text-white tracking-tight">Life OS</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold">
+                      {navItems.find((n) => n.id === activeTab)?.shortLabel}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setShowGcalSyncModal(true)}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 text-xs font-semibold transition"
+                  title="Sync Google Calendar"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingGcal ? 'animate-spin' : ''}`} />
+                  <span>GCal</span>
+                </button>
+
+                <button
+                  onClick={() => setPlanLocked((prev) => !prev)}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition ${
+                    planLocked
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                      : 'bg-slate-900 text-slate-300 border-slate-800'
+                  }`}
+                  title="Lock/Unlock 24h Plan"
+                >
+                  {planLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                  <span className="hidden sm:inline">{planLocked ? 'Locked' : 'Editable'}</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('launchpad')}
+                  className={`p-2 rounded-xl border transition ${
+                    activeTab === 'launchpad'
+                      ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
+                      : 'bg-slate-900 text-slate-300 border-slate-800'
+                  }`}
+                  title="Coded Sites Launchpad"
+                >
+                  <Code className="w-4 h-4" />
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('settings')}
+                  className={`p-2 rounded-xl border transition ${
+                    activeTab === 'settings'
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      : 'bg-slate-900 text-slate-300 border-slate-800'
+                  }`}
+                  title="Settings & Backup"
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-900">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 min-w-0">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0">
+                  <Target className="w-3 h-3" /> Focus ({activeGoalsList.length}/{settings.maxActiveGoals})
+                </span>
+                {activeGoalsList.map((g) => (
+                  <button
+                    key={g.id}
+                    onClick={() => setActiveTab('goals')}
+                    className="text-[11px] text-slate-300 bg-slate-900/90 px-2.5 py-0.5 rounded-lg border border-slate-800 truncate max-w-[180px] sm:max-w-[240px] shrink-0"
+                  >
+                    {g.title}
+                  </button>
+                ))}
+              </div>
+
+              {(activeTab === 'morning' || activeTab === 'night') && (
+                <div className="flex items-center bg-slate-900 p-0.5 rounded-xl border border-slate-800 shrink-0">
+                  <button
+                    onClick={() => setActiveTab('morning')}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${
+                      activeTab === 'morning' ? 'bg-amber-500 text-slate-950' : 'text-slate-400'
+                    }`}
+                  >
+                    Morning/Rest
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('night')}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${
+                      activeTab === 'night' ? 'bg-indigo-500 text-slate-950' : 'text-slate-400'
+                    }`}
+                  >
+                    Night/Journal
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
+
+        {/* DYNAMIC VIEWPORT */}
+        <main className="flex-1 p-3.5 sm:p-6 lg:p-8 max-w-6xl w-full mx-auto space-y-5">
+          {/* =================================================================
+              TAB 1: SMART CALENDAR & 24-HOUR PLAN BUILDER
+          ================================================================== */}
+          {activeTab === 'calendar' && (
+            <div className="space-y-4 sm:space-y-6">
+              <div className="bg-gradient-to-r from-slate-900 via-slate-900 to-emerald-950/40 p-4 sm:p-5 rounded-2xl border border-slate-800 space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <h2 className="text-lg sm:text-2xl font-bold text-white flex items-center gap-2">
+                      <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-400 shrink-0" />
+                      Today, Tomorrow & Horizon
+                    </h2>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {settings.lastGcalSync} • Wife Filter {settings.wifeFilterEnabled ? 'ON' : 'OFF'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowGcalSyncModal(true)}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5 shrink-0"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncingGcal ? 'animate-spin' : ''}`} />
+                    Sync GCal
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { offset: 0, label: 'Today (24h)' },
+                    { offset: 1, label: 'Tomorrow' },
+                    { offset: 2, label: 'Horizon (+2–7d)' }
+                  ].map((d) => (
+                    <button
+                      key={d.offset}
+                      onClick={() => setSelectedDayOffset(d.offset)}
+                      className={`py-2.5 px-2 rounded-xl text-xs font-bold text-center transition ${
+                        selectedDayOffset === d.offset
+                          ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-950'
+                          : 'bg-slate-800/90 text-slate-300 hover:bg-slate-700'
+                      }`}
+                    >
+                      {d.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="lg:hidden grid grid-cols-3 gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                  {[
+                    { id: 'unified', label: 'Unified Stream' },
+                    { id: 'plan', label: '24h Plan Only' },
+                    { id: 'gcal', label: 'GCal Only' }
+                  ].map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => setMobilePlanViewMode(m.id)}
+                      className={`py-2 rounded-lg text-xs font-semibold transition ${
+                        mobilePlanViewMode === m.id
+                          ? 'bg-slate-800 text-emerald-300 border border-emerald-500/30'
+                          : 'text-slate-400'
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* WIFE SHARED CALENDAR FILTER BAR */}
+              <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="p-2 rounded-xl bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 shrink-0">
+                    <Filter className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-white truncate">Wife Shared Calendar Filter</p>
+                    <p className="text-[11px] text-slate-400 truncate">
+                      Muting solo reminders ({settings.wifeFilterKeywords.slice(0, 3).join(', ')}...)
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={() => setPeekFilteredEvents((p) => !p)}
+                    className="flex items-center gap-1 px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 transition"
+                  >
+                    {peekFilteredEvents ? <EyeOff className="w-3.5 h-3.5 text-amber-400" /> : <Eye className="w-3.5 h-3.5 text-emerald-400" />}
+                    <span>{peekFilteredEvents ? 'Hide Muted' : 'Peek Muted'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* MOBILE UNIFIED STREAM VIEW */}
+              {mobilePlanViewMode === 'unified' && (
+                <div className="lg:hidden bg-slate-900/80 border border-slate-800 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                    <div>
+                      <h3 className="font-bold text-sm text-white">Unified 24-Hour Stream</h3>
+                      <p className="text-[11px] text-slate-400">Filtered Google Calendar anchors + 24h Plan blocks in time order</p>
+                    </div>
+                    <span className="text-xs font-mono text-emerald-400 font-bold">{unifiedMobileTimeline.length} items</span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+                    <button
+                      onClick={() => setActiveTab('morning')}
+                      className="text-xs px-3 py-1.5 rounded-xl bg-amber-500/15 text-amber-300 border border-amber-500/30 shrink-0 font-medium"
+                    >
+                      + Morning / Rest
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('prayer')}
+                      className="text-xs px-3 py-1.5 rounded-xl bg-rose-500/15 text-rose-300 border border-rose-500/30 shrink-0 font-medium"
+                    >
+                      + Prayer
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('night')}
+                      className="text-xs px-3 py-1.5 rounded-xl bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 shrink-0 font-medium"
+                    >
+                      + Night Wind-Down
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('lists')}
+                      className="text-xs px-3 py-1.5 rounded-xl bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 shrink-0 font-medium"
+                    >
+                      + From Lists
+                    </button>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {unifiedMobileTimeline.map((item) => {
+                      if (item.streamType === 'gcal_event') {
+                        return (
+                          <div
+                            key={item.id}
+                            className={`p-3.5 rounded-2xl border transition ${
+                              item.isMuted
+                                ? 'bg-slate-950/50 border-amber-500/30 opacity-75'
+                                : 'bg-indigo-950/25 border-indigo-500/30'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 text-xs mb-0.5">
+                                  <span className="font-mono font-bold text-indigo-300">
+                                    {item.startTime} – {item.endTime}
+                                  </span>
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-200 font-semibold">
+                                    GCal Anchor
+                                  </span>
+                                </div>
+                                <h4 className="font-bold text-sm text-white">{item.title}</h4>
+                                <p className="text-xs text-slate-400 truncate">
+                                  {item.calendar} {item.location ? `• ${item.location}` : ''}
+                                </p>
+                              </div>
+                              {item.isMuted && (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 shrink-0">
+                                  Muted
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div
+                          key={item.id}
+                          className={`flex items-center justify-between p-3.5 rounded-2xl border transition ${
+                            item.completed
+                              ? 'bg-slate-950/40 border-slate-800/60 opacity-60'
+                              : 'bg-slate-950/95 border-slate-800'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <button
+                              onClick={() => togglePlanBlockComplete(item.id)}
+                              className={`w-6 h-6 rounded-lg flex items-center justify-center border transition shrink-0 ${
+                                item.completed
+                                  ? 'bg-emerald-500 border-emerald-500 text-slate-950'
+                                  : 'border-slate-600 hover:border-emerald-400'
+                              }`}
+                            >
+                              {item.completed && <Check className="w-4 h-4 stroke-[3]" />}
+                            </button>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-xs font-bold text-emerald-400">{item.startTime}</span>
+                                <span className="text-[11px] text-slate-500">{item.durationMins}m</span>
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 uppercase font-bold">
+                                  {item.category}
+                                </span>
+                              </div>
+                              <p className={`text-sm font-medium mt-0.5 ${item.completed ? 'line-through text-slate-500' : 'text-white'}`}>
+                                {item.title}
+                              </p>
+                            </div>
+                          </div>
+                          {!planLocked && (
+                            <button
+                              onClick={() => deletePlanBlock(item.id)}
+                              className="p-2 text-slate-500 hover:text-rose-400 shrink-0"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* TWO-COLUMN DESKTOP GRID */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <div
+                  className={`lg:col-span-5 bg-slate-900/70 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4 ${
+                    mobilePlanViewMode === 'gcal' ? 'block' : 'hidden lg:block'
+                  }`}
+                >
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                    <div>
+                      <h3 className="font-bold text-base text-white">Google Calendar Schedule</h3>
+                      <p className="text-xs text-slate-400">Primary, Family & Shared Calendars</p>
+                    </div>
+                    <span className="text-xs px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300">
+                      {selectedDayOffset === 0 ? 'Today' : selectedDayOffset === 1 ? 'Tomorrow' : 'Upcoming Horizon'}
+                    </span>
+                  </div>
+
+                  <div className="space-y-3">
+                    {gcalEvents
+                      .filter((ev) => (selectedDayOffset === 2 ? ev.dayOffset >= 2 : ev.dayOffset === selectedDayOffset))
+                      .map((ev) => {
+                        const isMuted = isEventMutedByWifeFilter(ev);
+                        if (isMuted && !peekFilteredEvents) return null;
+
+                        return (
+                          <div
+                            key={ev.id}
+                            className={`p-3.5 rounded-xl border transition ${
+                              isMuted
+                                ? 'bg-slate-950/50 border-amber-500/30 opacity-75'
+                                : 'bg-slate-950/90 border-slate-800 hover:border-slate-700'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <div className="flex items-center gap-2 text-xs text-slate-400 mb-1">
+                                  <span className="font-mono text-emerald-400 font-semibold">
+                                    {ev.startTime} – {ev.endTime}
+                                  </span>
+                                  <span>•</span>
+                                  <span className="truncate">{ev.calendar}</span>
+                                </div>
+                                <h4 className="font-semibold text-sm text-white">{ev.title}</h4>
+                                {ev.location && <p className="text-xs text-slate-400 mt-0.5">{ev.location}</p>}
+                              </div>
+
+                              {isMuted ? (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0">
+                                  Muted Personal Reminder
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() =>
+                                    addBlockTo24hPlan({
+                                      title: `[Cal] ${ev.title}`,
+                                      startTime: ev.startTime,
+                                      durationMins: 45,
+                                      category: 'calendar',
+                                      dayOffset: ev.dayOffset > 1 ? 1 : ev.dayOffset
+                                    })
+                                  }
+                                  className="text-xs px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-emerald-500/20 hover:text-emerald-300 text-slate-300 transition shrink-0"
+                                >
+                                  + Pin Anchor
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+
+                  {/* Quick Add Custom Calendar Event */}
+                  <div className="pt-3 border-t border-slate-800">
+                    <p className="text-xs font-semibold text-slate-300 mb-2">Add Custom Event to Schedule</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <input
+                        type="text"
+                        placeholder="Event title..."
+                        value={newCustomEvent.title}
+                        onChange={(e) => setNewCustomEvent((p) => ({ ...p, title: e.target.value }))}
+                        className="sm:col-span-2 px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-base sm:text-xs text-white focus:outline-none focus:border-emerald-500"
+                      />
+                      <input
+                        type="time"
+                        value={newCustomEvent.startTime}
+                        onChange={(e) => setNewCustomEvent((p) => ({ ...p, startTime: e.target.value }))}
+                        className="px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-base sm:text-xs text-white focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (!newCustomEvent.title.trim()) return;
+                        const created = {
+                          id: `g-custom-${Date.now()}`,
+                          dayOffset: selectedDayOffset,
+                          startTime: newCustomEvent.startTime,
+                          endTime: '15:00',
+                          title: newCustomEvent.title.trim(),
+                          calendar: 'Custom In-App',
+                          isSoloReminder: false,
+                          location: 'Added in Life OS'
+                        };
+                        setGcalEvents((prev) => [...prev, created]);
+                        setNewCustomEvent((p) => ({ ...p, title: '' }));
+                        showToast('Added custom event to schedule!');
+                      }}
+                      className="mt-2 w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-emerald-300 transition"
+                    >
+                      + Add to Calendar Schedule
+                    </button>
+                  </div>
+                </div>
+
+                {/* RIGHT COLUMN: THE 24-HOUR INTENTIONAL PLAN TIMELINE */}
+                <div
+                  className={`lg:col-span-7 bg-slate-900/70 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4 ${
+                    mobilePlanViewMode === 'plan' ? 'block' : 'hidden lg:block'
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                    <div>
+                      <h3 className="font-bold text-base text-white flex items-center gap-2">
+                        24-Hour Intentional Plan Canvas
+                        {planLocked && <Lock className="w-4 h-4 text-amber-400" />}
+                      </h3>
+                      <p className="text-xs text-slate-400">
+                        Combine Morning/Night routines, Prayer, Menuha Rest, and Family Wall list items into one timeline.
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setPlanLocked((p) => !p);
+                        showToast(!planLocked ? '24-Hour Plan locked for focused execution!' : '24-Hour Plan unlocked for editing.');
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+                        planLocked
+                          ? 'bg-amber-500 text-slate-950'
+                          : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30'
+                      }`}
+                    >
+                      {planLocked ? 'Unlock Plan' : 'Lock Next 24 Hours'}
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] text-slate-400 mr-1">Quick Add Module:</span>
+                    <button
+                      onClick={() => setActiveTab('morning')}
+                      className="text-xs px-2.5 py-1.5 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25 transition"
+                    >
+                      + Morning / Rest
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('prayer')}
+                      className="text-xs px-2.5 py-1.5 rounded-lg bg-rose-500/15 text-rose-300 border border-rose-500/30 hover:bg-rose-500/25 transition"
+                    >
+                      + Prayer Block
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('night')}
+                      className="text-xs px-2.5 py-1.5 rounded-lg bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/25 transition"
+                    >
+                      + Night Wind-Down
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('lists')}
+                      className="text-xs px-2.5 py-1.5 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25 transition"
+                    >
+                      + From Family Wall Lists
+                    </button>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {planBlocks
+                      .filter((b) => b.dayOffset === (selectedDayOffset > 1 ? 1 : selectedDayOffset))
+                      .map((block) => {
+                        const badgeColors = {
+                          morning: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+                          rest: 'bg-teal-500/15 text-teal-300 border-teal-500/30',
+                          prayer: 'bg-rose-500/15 text-rose-300 border-rose-500/30',
+                          night: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30',
+                          list: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+                          calendar: 'bg-blue-500/15 text-blue-300 border-blue-500/30'
+                        };
+
+                        return (
+                          <div
+                            key={block.id}
+                            className={`flex items-center justify-between p-3.5 rounded-xl border transition ${
+                              block.completed
+                                ? 'bg-slate-950/40 border-slate-800/60 opacity-60'
+                                : 'bg-slate-950/90 border-slate-800 hover:border-slate-700'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3.5 min-w-0">
+                              <button
+                                onClick={() => togglePlanBlockComplete(block.id)}
+                                className={`w-6 h-6 rounded-lg flex items-center justify-center border transition shrink-0 ${
+                                  block.completed
+                                    ? 'bg-emerald-500 border-emerald-500 text-slate-950'
+                                    : 'border-slate-600 hover:border-emerald-400'
+                                }`}
+                              >
+                                {block.completed && <Check className="w-4 h-4 stroke-[3]" />}
+                              </button>
+
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-mono text-xs font-bold text-emerald-400">{block.startTime}</span>
+                                  <span className="text-[11px] text-slate-500">({block.durationMins}m)</span>
+                                  <span
+                                    className={`text-[10px] px-2 py-0.5 rounded-full border uppercase tracking-wider font-semibold ${
+                                      badgeColors[block.category] || badgeColors.morning
+                                    }`}
+                                  >
+                                    {block.category}
+                                  </span>
+                                </div>
+                                <p className={`text-sm font-medium mt-0.5 truncate ${block.completed ? 'line-through text-slate-500' : 'text-white'}`}>
+                                  {block.title}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1 shrink-0">
+                              {gcalAccessToken && (
+                                <button
+                                  onClick={() => pushBlockToLiveGoogleCalendar(block)}
+                                  className="px-2 py-1 text-[10px] rounded-lg bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/30"
+                                >
+                                  Push GCal
+                                </button>
+                              )}
+                              {!planLocked && (
+                                <button
+                                  onClick={() => deletePlanBlock(block.id)}
+                                  className="p-2 text-slate-500 hover:text-rose-400 rounded-lg hover:bg-slate-800 transition shrink-0"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* =================================================================
+              TAB 2: FAMILY WALL LISTS EXPERIENCE
+          ================================================================== */}
+          {activeTab === 'lists' && (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-900/90 p-5 rounded-2xl border border-slate-800">
+                <div>
+                  <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2.5">
+                    <CheckSquare className="w-6 h-6 text-emerald-400" />
+                    Family Wall Shared Boards & Lists
+                  </h2>
+                  <p className="text-xs sm:text-sm text-slate-400 mt-1">
+                    Organize household, grocery, family, and workbench lists—and push any item directly onto your 24-Hour Plan or Custom Calendar.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="New board title..."
+                    value={newListTitle}
+                    onChange={(e) => setNewListTitle(e.target.value)}
+                    className="px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-base sm:text-xs text-white focus:outline-none focus:border-emerald-500"
+                  />
+                  <select
+                    value={newListCategory}
+                    onChange={(e) => setNewListCategory(e.target.value)}
+                    className="px-2.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-base sm:text-xs text-slate-300"
+                  >
+                    <option value="Family">Family</option>
+                    <option value="Groceries">Groceries</option>
+                    <option value="Workbench">Workbench</option>
+                  </select>
+                  <button
+                    onClick={() => {
+                      if (!newListTitle.trim()) return;
+                      setLists((prev) => [
+                        ...prev,
+                        {
+                          id: `list-${Date.now()}`,
+                          title: newListTitle.trim(),
+                          category: newListCategory,
+                          color: 'emerald',
+                          items: []
+                        }
+                      ]);
+                      setNewListTitle('');
+                      showToast('Created new Family Wall list board!');
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs hover:bg-emerald-400 transition shrink-0"
+                  >
+                    + Board
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {lists.map((board) => (
+                  <div key={board.id} className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between space-y-4">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                        <div>
+                          <span className="text-[10px] uppercase tracking-wider font-bold text-emerald-400">{board.category}</span>
+                          <h3 className="font-bold text-base text-white">{board.title}</h3>
+                        </div>
+                        <button
+                          onClick={() => setLists((prev) => prev.filter((l) => l.id !== board.id))}
+                          className="p-1.5 text-slate-500 hover:text-rose-400 rounded-lg"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <div className="space-y-2">
+                        {board.items.map((item) => (
+                          <div
+                            key={item.id}
+                            className={`p-3 rounded-xl border transition ${
+                              item.completed ? 'bg-slate-950/40 border-slate-800/50 opacity-60' : 'bg-slate-950/90 border-slate-800'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex items-start gap-2.5 min-w-0">
+                                <button
+                                  onClick={() =>
+                                    setLists((prev) =>
+                                      prev.map((l) =>
+                                        l.id === board.id
+                                          ? {
+                                              ...l,
+                                              items: l.items.map((it) => (it.id === item.id ? { ...it, completed: !it.completed } : it))
+                                            }
+                                          : l
+                                      )
+                                    )
+                                  }
+                                  className={`mt-0.5 w-5 h-5 rounded-md flex items-center justify-center border shrink-0 ${
+                                    item.completed ? 'bg-emerald-500 border-emerald-500 text-slate-950' : 'border-slate-600'
+                                  }`}
+                                >
+                                  {item.completed && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                                </button>
+                                <div className="min-w-0">
+                                  <p className={`text-xs sm:text-sm font-medium ${item.completed ? 'line-through text-slate-500' : 'text-slate-100'}`}>
+                                    {item.text}
+                                  </p>
+                                  <span className="text-[10px] text-slate-400">Assigned: {item.assignedTo || 'Shared'}</span>
+                                </div>
+                              </div>
+
+                              <button
+                                onClick={() =>
+                                  addBlockTo24hPlan({
+                                    title: `[List] ${item.text}`,
+                                    startTime: item.scheduledTime || '15:00',
+                                    durationMins: 30,
+                                    category: 'list',
+                                    dayOffset: 0
+                                  })
+                                }
+                                className="px-2 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-[10px] font-semibold shrink-0"
+                              >
+                                + 24h Plan
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-800 flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Add item to board..."
+                        value={listItemDrafts[board.id] || ''}
+                        onChange={(e) => setListItemDrafts((p) => ({ ...p, [board.id]: e.target.value }))}
+                        className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-base sm:text-xs text-white focus:outline-none focus:border-emerald-500"
+                      />
+                      <button
+                        onClick={() => {
+                          const txt = (listItemDrafts[board.id] || '').trim();
+                          if (!txt) return;
+                          setLists((prev) =>
+                            prev.map((l) =>
+                              l.id === board.id
+                                ? {
+                                    ...l,
+                                    items: [
+                                      ...l.items,
+                                      { id: `li-${Date.now()}`, text: txt, assignedTo: 'Dan', completed: false, scheduledTime: '15:00' }
+                                    ]
+                                  }
+                                : l
+                            )
+                          );
+                          setListItemDrafts((p) => ({ ...p, [board.id]: '' }));
+                        }}
+                        className="p-2 rounded-xl bg-emerald-500 text-slate-950 hover:bg-emerald-400 transition shrink-0"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* =================================================================
+              TAB 3: NEUROSCIENCE MORNING ROUTINE & BIBLICAL REST
+          ================================================================== */}
+          {activeTab === 'morning' && (
+            <div className="space-y-6">
+              <div className="bg-gradient-to-r from-amber-950/40 via-slate-900 to-slate-900 p-5 rounded-2xl border border-amber-500/30">
+                <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2.5">
+                  <Sun className="w-6 h-6 text-amber-400" />
+                  Neuroscience Morning Activation & Biblical Rest
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-300 mt-1">
+                  Circadian phase-locking, tonic dopamine preservation, joint mobility, and Menuha Sabbath rest blocks. Tap any module to insert it into your 24-Hour Plan.
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-amber-400">Morning Neuroscience Protocol</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {MORNING_NEURO_MODULES.map((mod) => (
+                    <div key={mod.id} className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5 flex flex-col justify-between space-y-3">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                            {mod.neuroPrinciple}
+                          </span>
+                          <span className="text-xs font-mono text-slate-400">
+                            {mod.defaultTime} • {mod.durationMins}m
+                          </span>
+                        </div>
+                        <h4 className="font-bold text-base text-white">{mod.title}</h4>
+                        <p className="text-xs text-slate-300 leading-relaxed">{mod.scienceSummary}</p>
+                        <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800/80 text-xs text-emerald-300">
+                          <strong>{mod.scriptureRef}:</strong> {mod.scriptureInsight}
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() =>
+                          addBlockTo24hPlan({
+                            title: mod.title,
+                            startTime: mod.defaultTime,
+                            durationMins: mod.durationMins,
+                            category: 'morning',
+                            dayOffset: 0
+                          })
+                        }
+                        className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition"
+                      >
+                        + Add to Today’s 24-Hour Plan ({mod.defaultTime})
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-4 pt-2">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-teal-400">Biblical Rest & Rejuvenation (Menuha & Solitude)</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {BIBLICAL_REST_MODULES.map((rest) => (
+                    <div key={rest.id} className="bg-slate-900/80 border border-teal-500/30 rounded-2xl p-4 sm:p-5 flex flex-col justify-between space-y-3">
+                      <div className="space-y-2">
+                        <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-teal-500/15 text-teal-300 border border-teal-500/30">
+                          {rest.biblicalPrinciple}
+                        </span>
+                        <h4 className="font-bold text-base text-white">{rest.title}</h4>
+                        <p className="text-xs text-slate-300 leading-relaxed">{rest.wisdomSummary}</p>
+                        <p className="text-xs text-teal-200 bg-slate-950/80 p-2.5 rounded-xl border border-slate-800">
+                          <strong>Practice:</strong> {rest.actionPrompt}
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={() =>
+                          addBlockTo24hPlan({
+                            title: rest.title,
+                            startTime: rest.defaultTime,
+                            durationMins: rest.durationMins,
+                            category: 'rest',
+                            dayOffset: 0
+                          })
+                        }
+                        className="w-full py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold text-xs transition"
+                      >
+                        + Schedule Rest Block ({rest.defaultTime})
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* =================================================================
+              TAB 4: NIGHT WIND-DOWN & 6-MODE JOURNALING STUDIO
+          ================================================================== */}
+          {activeTab === 'night' && (
+            <div className="space-y-6">
+              <div className="bg-gradient-to-r from-indigo-950/50 via-slate-900 to-slate-900 p-5 rounded-2xl border border-indigo-500/30">
+                <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2.5">
+                  <Moon className="w-6 h-6 text-indigo-400" />
+                  Night Wind-Down & 6-Mode Journaling Studio
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-300 mt-1">
+                  Protect melatonin onset, drop core body temperature, and close open working-memory loops before sleep.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {NIGHT_NEURO_MODULES.map((nMod) => (
+                  <div key={nMod.id} className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between space-y-3">
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+                        {nMod.neuroPrinciple}
+                      </span>
+                      <h4 className="font-bold text-sm text-white">{nMod.title}</h4>
+                      <p className="text-xs text-slate-300 leading-relaxed">{nMod.scienceSummary}</p>
+                      <p className="text-[11px] text-indigo-200">
+                        <strong>{nMod.scriptureRef}:</strong> {nMod.scriptureInsight}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() =>
+                        addBlockTo24hPlan({
+                          title: nMod.title,
+                          startTime: nMod.defaultTime,
+                          durationMins: nMod.durationMins,
+                          category: 'night',
+                          dayOffset: 0
+                        })
+                      }
+                      className="w-full py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-slate-950 font-bold text-xs transition"
+                    >
+                      + Add to Tonight’s Plan ({nMod.defaultTime})
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* 6-MODE INTERACTIVE JOURNALING STUDIO */}
+              <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                  <div>
+                    <h3 className="font-bold text-base text-white">Evening Journaling Studio (6 Research & Biblical Modes)</h3>
+                    <p className="text-xs text-slate-400">Select a framework below based on what your mind or heart needs tonight.</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {JOURNAL_FRAMEWORKS.map((fw) => (
+                    <button
+                      key={fw.id}
+                      onClick={() => setSelectedJournalMode(fw.id)}
+                      className={`p-3 rounded-xl border text-left transition ${
+                        selectedJournalMode === fw.id
+                          ? 'bg-indigo-500/20 border-indigo-500 text-white'
+                          : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      <p className="text-xs font-bold">{fw.name}</p>
+                      <p className="text-[10px] text-indigo-300 mt-0.5">{fw.badge}</p>
+                    </button>
+                  ))}
+                </div>
+
+                {(() => {
+                  const activeFw = JOURNAL_FRAMEWORKS.find((f) => f.id === selectedJournalMode) || JOURNAL_FRAMEWORKS[0];
+                  return (
+                    <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-4">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <span className="text-xs font-bold text-indigo-300">{activeFw.name}</span>
+                        <span className="text-[11px] text-slate-400">{activeFw.scienceNote}</span>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold text-slate-200 block">{activeFw.prompts[0]}</label>
+                        <textarea
+                          rows={3}
+                          value={journalResponseA}
+                          onChange={(e) => setJournalResponseA(e.target.value)}
+                          placeholder="Write freely here..."
+                          className="w-full p-3 rounded-xl bg-slate-900 border border-slate-800 text-base sm:text-xs text-white focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold text-slate-200 block">{activeFw.prompts[1]}</label>
+                        <textarea
+                          rows={2}
+                          value={journalResponseB}
+                          onChange={(e) => setJournalResponseB(e.target.value)}
+                          placeholder="Your reflection or #1 priority..."
+                          className="w-full p-3 rounded-xl bg-slate-900 border border-slate-800 text-base sm:text-xs text-white focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <button
+                          onClick={() => {
+                            if (!journalResponseA.trim() && !journalResponseB.trim()) return;
+                            setJournalEntries((prev) => [
+                              {
+                                id: `je-${Date.now()}`,
+                                date: new Date().toLocaleString(),
+                                framework: activeFw.name,
+                                responseA: journalResponseA,
+                                responseB: journalResponseB
+                              },
+                              ...prev
+                            ]);
+                            setJournalResponseA('');
+                            setJournalResponseB('');
+                            showToast('Saved evening journal entry to your local vault!');
+                          }}
+                          className="px-4 py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-slate-950 font-bold text-xs transition"
+                        >
+                          Save Journal Entry
+                        </button>
+
+                        {selectedJournalMode === 'baylor_offload' && journalResponseB.trim() && (
+                          <button
+                            onClick={() => {
+                              addBlockTo24hPlan({
+                                title: `[Top Priority] ${journalResponseB.trim()}`,
+                                startTime: '08:30',
+                                durationMins: 45,
+                                category: 'morning',
+                                dayOffset: 1
+                              });
+                            }}
+                            className="px-4 py-2.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 font-bold text-xs transition"
+                          >
+                            + Push #1 Task to Tomorrow’s 24h Plan
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {journalEntries.length > 0 && (
+                  <div className="space-y-2 pt-3 border-t border-slate-800">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Recent Journal Vault ({journalEntries.length})</h4>
+                    <div className="space-y-2 max-h-60 overflow-y-auto">
+                      {journalEntries.map((entry) => (
+                        <div key={entry.id} className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs space-y-1">
+                          <div className="flex items-center justify-between text-slate-400">
+                            <span className="font-bold text-indigo-300">{entry.framework}</span>
+                            <span>{entry.date}</span>
+                          </div>
+                          {entry.responseA && <p className="text-slate-200">{entry.responseA}</p>}
+                          {entry.responseB && <p className="text-emerald-300">{entry.responseB}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* =================================================================
+              TAB 5: CHRISTIAN PRAYER SANCTUARY (NASB & NLT STUDY LENSES)
+          ================================================================== */}
+          {activeTab === 'prayer' && (
+            <div className="space-y-6">
+              <div className="bg-gradient-to-r from-rose-950/40 via-slate-900 to-slate-900 p-5 rounded-2xl border border-rose-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2.5">
+                    <Heart className="w-6 h-6 text-rose-400" />
+                    Christian Prayer Sanctuary
+                  </h2>
+                  <p className="text-xs sm:text-sm text-slate-300 mt-1">
+                    Daily Intercession Deck, Guided P.R.A.Y. Sanctuary, and What Jesus Taught Us to Pray For (NASB Structural & NLT Heart Lenses).
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { id: 'deck', label: 'Intercession Deck' },
+                    { id: 'guided', label: 'Guided P.R.A.Y.' },
+                    { id: 'jesus_teachings', label: 'Jesus’ Teachings (NASB/NLT)' },
+                    { id: 'answered', label: 'Ebenezer Vault' }
+                  ].map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => setPrayerSubTab(t.id)}
+                      className={`px-3 py-2 rounded-xl text-xs font-bold transition ${
+                        prayerSubTab === t.id ? 'bg-rose-500 text-slate-950' : 'bg-slate-800 text-slate-300'
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {prayerSubTab === 'deck' && (
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                  <div className="lg:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {prayerCards
+                      .filter((c) => !c.isAnswered)
+                      .map((card) => (
+                        <div key={card.id} className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between space-y-3">
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/30">
+                                {card.category}
+                              </span>
+                              <span className="text-xs text-slate-400">Prayed {card.prayedCount}x</span>
+                            </div>
+                            <h4 className="font-bold text-base text-white">{card.title}</h4>
+                            <p className="text-xs text-slate-300">{card.notes}</p>
+                            {card.scriptureTag && (
+                              <p className="text-[11px] text-amber-300 font-medium">Scripture Anchor: {card.scriptureTag}</p>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2 pt-2 border-t border-slate-800">
+                            <button
+                              onClick={() => {
+                                setPrayerCards((prev) =>
+                                  prev.map((c) =>
+                                    c.id === card.id ? { ...c, prayedCount: c.prayedCount + 1, lastPrayed: 'Just now' } : c
+                                  )
+                                );
+                                showToast(`Prayed for "${card.title}"`);
+                              }}
+                              className="flex-1 py-2 rounded-xl bg-rose-500 hover:bg-rose-400 text-slate-950 font-bold text-xs transition"
+                            >
+                              Amen • Prayed Today
+                            </button>
+                            <button
+                              onClick={() => {
+                                setPrayerCards((prev) =>
+                                  prev.map((c) => (c.id === card.id ? { ...c, isAnswered: true, answeredDate: new Date().toLocaleDateString() } : c))
+                                );
+                                showToast('Moved to Answered Prayer Ebenezer Vault!');
+                              }}
+                              className="px-2.5 py-2 rounded-xl bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-xs font-semibold"
+                            >
+                              Answered
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+
+                  <div className="lg:col-span-4 bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3 h-fit">
+                    <h3 className="font-bold text-sm text-white">Add Prayer Card to Deck</h3>
+                    <input
+                      type="text"
+                      placeholder="Who or what are you praying for?"
+                      value={newPrayerTitle}
+                      onChange={(e) => setNewPrayerTitle(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-base sm:text-xs text-white"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Scripture reference (e.g., Philippians 4:6-7)"
+                      value={newPrayerScripture}
+                      onChange={(e) => setNewPrayerScripture(e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-base sm:text-xs text-white"
+                    />
+                    <textarea
+                      rows={3}
+                      placeholder="Specific requests or notes..."
+                      value={newPrayerNotes}
+                      onChange={(e) => setNewPrayerNotes(e.target.value)}
+                      className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-base sm:text-xs text-white"
+                    />
+                    <button
+                      onClick={() => {
+                        if (!newPrayerTitle.trim()) return;
+                        setPrayerCards((prev) => [
+                          ...prev,
+                          {
+                            id: `pc-${Date.now()}`,
+                            title: newPrayerTitle.trim(),
+                            category: newPrayerCategory,
+                            scriptureTag: newPrayerScripture.trim() || 'Matthew 7:7',
+                            notes: newPrayerNotes.trim(),
+                            prayedCount: 0,
+                            lastPrayed: 'New',
+                            isAnswered: false
+                          }
+                        ]);
+                        setNewPrayerTitle('');
+                        setNewPrayerScripture('');
+                        setNewPrayerNotes('');
+                        showToast('Added new card to your Intercession Deck!');
+                      }}
+                      className="w-full py-2.5 rounded-xl bg-rose-500 text-slate-950 font-bold text-xs"
+                    >
+                      + Add to Prayer Deck
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {prayerSubTab === 'guided' && (
+                <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 max-w-2xl mx-auto space-y-5">
+                  {(() => {
+                    const steps = [
+                      {
+                        letter: 'P — Pause & Be Still',
+                        ref: 'Psalm 46:10 • Matthew 6:6',
+                        prompt: 'Take two slow deep breaths. Step out of hurry and recognize that your Father is already present in this quiet space.'
+                      },
+                      {
+                        letter: 'R — Rejoice & Hallow His Name',
+                        ref: 'Matthew 6:9 • Psalm 103:1-5',
+                        prompt: 'Thank God for His character, His mercy through Christ, and two specific gifts from the last 24 hours.'
+                      },
+                      {
+                        letter: 'A — Ask & Intercede Boldly',
+                        ref: 'Matthew 6:11 • Luke 11:9-10',
+                        prompt: 'Lift up Regla, your family, your church serving team, and the daily bread and wisdom you need today.'
+                      },
+                      {
+                        letter: 'Y — Yield & Surrender',
+                        ref: 'Matthew 6:10 • Luke 22:42',
+                        prompt: 'Yield your schedule, unfinished projects, and expectations into God’s hands: "Your Kingdom come, Your will be done."'
+                      }
+                    ];
+                    const curr = steps[guidedStepIndex];
+                    return (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold uppercase tracking-wider text-rose-400">
+                            Lectio-Style Guided Flow ({guidedStepIndex + 1}/4)
+                          </span>
+                          <span className="text-xs text-slate-400">{curr.ref}</span>
+                        </div>
+                        <h3 className="text-xl font-bold text-white">{curr.letter}</h3>
+                        <p className="text-sm text-slate-200 leading-relaxed bg-slate-950 p-4 rounded-xl border border-slate-800">
+                          {curr.prompt}
+                        </p>
+                        <div className="flex items-center justify-between pt-2">
+                          <button
+                            onClick={() => setGuidedStepIndex((i) => Math.max(0, i - 1))}
+                            disabled={guidedStepIndex === 0}
+                            className="px-4 py-2 rounded-xl bg-slate-800 text-xs font-semibold text-slate-300 disabled:opacity-40"
+                          >
+                            Previous Step
+                          </button>
+                          <button
+                            onClick={() =>
+                              guidedStepIndex < 3
+                                ? setGuidedStepIndex((i) => i + 1)
+                                : (setGuidedStepIndex(0), showToast('Completed Guided P.R.A.Y. Sanctuary!'))
+                            }
+                            className="px-5 py-2.5 rounded-xl bg-rose-500 text-slate-950 font-bold text-xs"
+                          >
+                            {guidedStepIndex < 3 ? 'Next Step →' : 'Amen • Complete Prayer'}
+                          </button>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {prayerSubTab === 'jesus_teachings' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {JESUS_PRAYER_THEMES.map((item) => (
+                    <div key={item.id} className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between space-y-3">
+                      <div className="space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full bg-rose-500/15 text-rose-300 border border-rose-500/30">
+                            {item.category}
+                          </span>
+                          <span className="text-xs font-mono text-amber-300">{item.reference}</span>
+                        </div>
+                        <h4 className="font-bold text-base text-white">{item.theme}</h4>
+                        <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2 text-xs">
+                          <p className="text-slate-200">{item.nasbLens}</p>
+                          <p className="text-emerald-300 border-t border-slate-800 pt-2">{item.nltLens}</p>
+                        </div>
+                        <p className="text-xs italic text-slate-300">“{item.samplePrayer}”</p>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setPrayerCards((prev) => [
+                            ...prev,
+                            {
+                              id: `pc-${Date.now()}`,
+                              title: item.theme,
+                              category: item.category,
+                              scriptureTag: item.reference,
+                              notes: item.samplePrayer,
+                              prayedCount: 0,
+                              lastPrayed: 'Added from Jesus’ Teachings',
+                              isAnswered: false
+                            }
+                          ]);
+                          showToast(`Added "${item.theme}" to your Intercession Deck!`);
+                        }}
+                        className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-rose-500 hover:text-slate-950 text-rose-300 font-bold text-xs transition"
+                      >
+                        + Add Theme to My Daily Prayer Deck
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {prayerSubTab === 'answered' && (
+                <div className="space-y-3">
+                  {prayerCards.filter((c) => c.isAnswered).length === 0 ? (
+                    <div className="p-8 text-center bg-slate-900/60 border border-slate-800 rounded-2xl text-slate-400 text-sm">
+                      Mark any prayer card as “Answered” to build your Ebenezer memorial of God’s faithfulness.
+                    </div>
+                  ) : (
+                    prayerCards
+                      .filter((c) => c.isAnswered)
+                      .map((card) => (
+                        <div key={card.id} className="p-4 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 flex items-center justify-between">
+                          <div>
+                            <h4 className="font-bold text-sm text-white">{card.title}</h4>
+                            <p className="text-xs text-slate-300">{card.notes}</p>
+                            <span className="text-[10px] text-emerald-400">Prayed {card.prayedCount} times • Answered!</span>
+                          </div>
+                          <CheckCircle2 className="w-6 h-6 text-emerald-400 shrink-0" />
+                        </div>
+                      ))
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* =================================================================
+              TAB 6: PSYCHOLOGY & NEUROSCIENCE GOAL ENGINE
+          ================================================================== */}
+          {activeTab === 'goals' && (
+            <div className="space-y-6">
+              <div className="bg-gradient-to-r from-amber-950/40 via-slate-900 to-slate-900 p-5 rounded-2xl border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2.5">
+                    <Target className="w-6 h-6 text-amber-400" />
+                    WOOP & Implementation Intention Goal Engine
+                  </h2>
+                  <p className="text-xs sm:text-sm text-slate-300 mt-1">
+                    Uses Oettingen’s Mental Contrasting (WOOP), Gollwitzer’s IF-THEN Implementation Intentions, and a strict WIP Focus Limit ({activeGoalsList.length}/{settings.maxActiveGoals}).
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => setShowNewGoalForm((s) => !s)}
+                  className="px-4 py-2.5 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs shrink-0"
+                >
+                  {showNewGoalForm ? 'Close Form' : '+ New WOOP Goal'}
+                </button>
+              </div>
+
+              {/* Anterior Mid-Cingulate Cortex (aMCC) Daily Friction Slider */}
+              <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Flame className="w-4 h-4 text-amber-400" />
+                      Anterior Mid-Cingulate Cortex (aMCC) Daily Friction Score
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Neuroscience shows your aMCC grows when you voluntarily lean into one healthy micro-challenge you didn’t feel like doing today.
+                    </p>
+                  </div>
+                  <span className="text-lg font-bold text-amber-400">{dailyAmccScore}/10</span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={10}
+                  value={dailyAmccScore}
+                  onChange={(e) => setDailyAmccScore(Number(e.target.value))}
+                  className="w-full accent-amber-500"
+                />
+              </div>
+
+              {showNewGoalForm && (
+                <div className="bg-slate-900 border border-amber-500/40 rounded-2xl p-5 space-y-3">
+                  <h3 className="font-bold text-sm text-white">Create WOOP + Implementation Intention Goal</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <input
+                      type="text"
+                      placeholder="Goal Title..."
+                      value={goalDraft.title}
+                      onChange={(e) => setGoalDraft((p) => ({ ...p, title: e.target.value }))}
+                      className="px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-base sm:text-xs text-white"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Identity ('I am the kind of man who...')"
+                      value={goalDraft.identityStatement}
+                      onChange={(e) => setGoalDraft((p) => ({ ...p, identityStatement: e.target.value }))}
+                      className="px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-base sm:text-xs text-white"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Wish & Measurable Target..."
+                      value={goalDraft.wish}
+                      onChange={(e) => setGoalDraft((p) => ({ ...p, wish: e.target.value }))}
+                      className="px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-base sm:text-xs text-white"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Primary Internal Obstacle..."
+                      value={goalDraft.obstacle}
+                      onChange={(e) => setGoalDraft((p) => ({ ...p, obstacle: e.target.value }))}
+                      className="px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-base sm:text-xs text-white"
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="IF [Obstacle occurs], THEN I will immediately [Action]..."
+                    value={goalDraft.ifThenPlan}
+                    onChange={(e) => setGoalDraft((p) => ({ ...p, ifThenPlan: e.target.value }))}
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-base sm:text-xs text-white"
+                  />
+                  <button
+                    onClick={() => {
+                      if (!goalDraft.title.trim()) return;
+                      setGoals((prev) => [
+                        ...prev,
+                        {
+                          id: `goal-${Date.now()}`,
+                          ...goalDraft,
+                          progressPct: 10,
+                          streakDays: 1,
+                          amccFrictionScore: 7,
+                          status: 'active'
+                        }
+                      ]);
+                      setGoalDraft({ title: '', identityStatement: '', wish: '', outcome: '', obstacle: '', ifThenPlan: '' });
+                      setShowNewGoalForm(false);
+                      showToast('Added new WOOP Goal!');
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs"
+                  >
+                    Save Goal
+                  </button>
+                </div>
+              )}
+
+              <div className="space-y-4">
+                {goals.map((g) => (
+                  <div key={g.id} className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider">
+                          Identity: {g.identityStatement}
+                        </span>
+                        <h3 className="text-lg font-bold text-white mt-0.5">{g.title}</h3>
+                      </div>
+                      <span className="px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-xs font-bold">
+                        {g.streakDays}-Day Streak • {g.progressPct}%
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                      <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                        <strong className="text-slate-400 block mb-1">Obstacle (Mental Contrast):</strong>
+                        <span className="text-slate-200">{g.obstacle}</span>
+                      </div>
+                      <div className="p-3 rounded-xl bg-emerald-950/20 border border-emerald-500/30">
+                        <strong className="text-emerald-400 block mb-1">Gollwitzer IF-THEN Algorithm:</strong>
+                        <span className="text-emerald-100">{g.ifThenPlan}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setGoals((prev) =>
+                              prev.map((item) =>
+                                item.id === g.id
+                                  ? { ...item, streakDays: item.streakDays + 1, progressPct: Math.min(100, item.progressPct + 5) }
+                                  : item
+                              )
+                            );
+                            showToast(`Logged daily rep for "${g.title}"!`);
+                          }}
+                          className="px-3.5 py-2 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs"
+                        >
+                          + Log Today’s Rep
+                        </button>
+                        <button
+                          onClick={() =>
+                            addBlockTo24hPlan({
+                              title: `[Goal Block] ${g.title}`,
+                              startTime: '16:30',
+                              durationMins: 30,
+                              category: 'morning',
+                              dayOffset: 0
+                            })
+                          }
+                          className="px-3 py-2 rounded-xl bg-slate-800 text-slate-200 text-xs font-semibold"
+                        >
+                          + Block Time on 24h Plan
+                        </button>
+                      </div>
+
+                      <button
+                        onClick={() => setGoals((prev) => prev.filter((item) => item.id !== g.id))}
+                        className="p-2 text-slate-500 hover:text-rose-400"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* =================================================================
+              TAB 7: DEV LAUNCHPAD (CODED SITES & WEB APPS HUB)
+          ================================================================== */}
+          {activeTab === 'launchpad' && (
+            <div className="space-y-6">
+              <div className="bg-gradient-to-r from-purple-950/40 via-slate-900 to-slate-900 p-5 rounded-2xl border border-purple-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2.5">
+                    <Code className="w-6 h-6 text-purple-400" />
+                    Dev Launchpad — Coded Sites & Apps Directory
+                  </h2>
+                  <p className="text-xs sm:text-sm text-slate-300 mt-1">
+                    One-tap launch dock, mobile QR code generator, and next-feature scratchpad for all the apps you’ve built.
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => setShowNewSiteForm((s) => !s)}
+                  className="px-4 py-2.5 rounded-xl bg-purple-500 text-slate-950 font-bold text-xs shrink-0"
+                >
+                  {showNewSiteForm ? 'Close Form' : '+ Add Coded Site'}
+                </button>
+              </div>
+
+              {qrModalSite && (
+                <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+                  <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-sm w-full text-center space-y-4">
+                    <h3 className="font-bold text-base text-white">{qrModalSite.title}</h3>
+                    <div className="flex justify-center">
+                      <PseudoQrPattern seedText={qrModalSite.url} />
+                    </div>
+                    <p className="text-xs font-mono text-emerald-400 break-all">{qrModalSite.url}</p>
+                    <button
+                      onClick={() => setQrModalSite(null)}
+                      className="w-full py-2.5 rounded-xl bg-slate-800 text-white text-xs font-bold"
+                    >
+                      Close QR Preview
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {showNewSiteForm && (
+                <div className="bg-slate-900 border border-purple-500/40 rounded-2xl p-5 space-y-3">
+                  <h3 className="font-bold text-sm text-white">Add Coded Web App / Site</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <input
+                      type="text"
+                      placeholder="App Name (e.g. Web Radio Player)"
+                      value={siteDraft.title}
+                      onChange={(e) => setSiteDraft((p) => ({ ...p, title: e.target.value }))}
+                      className="px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-base sm:text-xs text-white"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Live URL (https://...)"
+                      value={siteDraft.url}
+                      onChange={(e) => setSiteDraft((p) => ({ ...p, url: e.target.value }))}
+                      className="px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-base sm:text-xs text-white"
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Short description / tagline..."
+                    value={siteDraft.tagline}
+                    onChange={(e) => setSiteDraft((p) => ({ ...p, tagline: e.target.value }))}
+                    className="w-full px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-base sm:text-xs text-white"
+                  />
+                  <button
+                    onClick={() => {
+                      if (!siteDraft.title.trim()) return;
+                      setCodedSites((prev) => [
+                        ...prev,
+                        {
+                          id: `site-${Date.now()}`,
+                          title: siteDraft.title.trim(),
+                          tagline: siteDraft.tagline.trim(),
+                          url: siteDraft.url.trim(),
+                          repoUrl: siteDraft.repoUrl.trim(),
+                          category: siteDraft.category,
+                          status: siteDraft.status,
+                          techStack: siteDraft.techStack.split(',').map((s) => s.trim()),
+                          nextTodo: siteDraft.nextTodo,
+                          accent: 'emerald'
+                        }
+                      ]);
+                      setShowNewSiteForm(false);
+                      showToast('Added coded site to Launchpad!');
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-purple-500 text-slate-950 font-bold text-xs"
+                  >
+                    Save to Launchpad
+                  </button>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {codedSites.map((site) => (
+                  <div key={site.id} className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between space-y-4">
+                    <div className="space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30">
+                          {site.category} • {site.status}
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => setQrModalSite(site)}
+                            className="p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white"
+                            title="Show QR Code"
+                          >
+                            <QrCode className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => setCodedSites((prev) => prev.filter((s) => s.id !== site.id))}
+                            className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-rose-400"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <h3 className="font-bold text-base text-white">{site.title}</h3>
+                      <p className="text-xs text-slate-300">{site.tagline}</p>
+
+                      <div className="space-y-1 pt-1">
+                        <label className="text-[10px] font-bold uppercase text-slate-400">Next Feature / Fix Scratchpad:</label>
+                        <input
+                          type="text"
+                          value={site.nextTodo}
+                          onChange={(e) =>
+                            setCodedSites((prev) =>
+                              prev.map((s) => (s.id === site.id ? { ...s, nextTodo: e.target.value } : s))
+                            )
+                          }
+                          className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-base sm:text-xs text-emerald-300"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2 border-t border-slate-800">
+                      <a
+                        href={site.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" /> Launch Site
+                      </a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* =================================================================
+              TAB 8: SETTINGS & SINGLE-DEVICE BACKUP VAULT
+          ================================================================== */}
+          {activeTab === 'settings' && (
+            <div className="space-y-6">
+              <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  <Settings className="w-6 h-6 text-emerald-400" />
+                  Single-Device JSON Backup & Restore Vault
+                </h2>
+                <p className="text-xs text-slate-400">
+                  All your data lives privately on your phone’s local storage ({(storageBytesUsed / 1024).toFixed(1)} KB used). Download a `.json` snapshot anytime or restore from a file.
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button
+                    onClick={handleDownloadBackupJson}
+                    className="py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-2"
+                  >
+                    <Download className="w-4 h-4" /> Download Full Life OS Backup (.JSON)
+                  </button>
+
+                  <label className="py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer border border-slate-700">
+                    <Upload className="w-4 h-4 text-emerald-400" /> Restore from .JSON File
+                    <input type="file" accept=".json,application/json" onChange={handleFileImport} className="hidden" />
+                  </label>
+                </div>
+
+                <div className="space-y-2 pt-3 border-t border-slate-800">
+                  <label className="text-xs font-semibold text-slate-300 block">Or Paste Raw Backup JSON Below:</label>
+                  <textarea
+                    rows={3}
+                    value={rawJsonImportText}
+                    onChange={(e) => setRawJsonImportText(e.target.value)}
+                    placeholder='{"app":"LifeOS_SwissArmyKnife", ...}'
+                    className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-base sm:text-xs text-white font-mono"
+                  />
+                  <button
+                    onClick={() => {
+                      try {
+                        applyImportedPayload(JSON.parse(rawJsonImportText));
+                        setRawJsonImportText('');
+                      } catch {
+                        showToast('Invalid JSON pasted.', 'warning');
+                      }
+                    }}
+                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-emerald-300"
+                  >
+                    Restore Pasted JSON
+                  </button>
+                </div>
+              </div>
+
+              {/* WIFE SHARED CALENDAR FILTER KEYWORD MANAGER */}
+              <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-bold text-base text-white">Shared Calendar "Wife Filter" Rules</h3>
+                    <p className="text-xs text-slate-400">
+                      Automatically hides solo reminders on shared calendars matching these keywords.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setSettings((s) => ({ ...s, wifeFilterEnabled: !s.wifeFilterEnabled }))}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold ${
+                      settings.wifeFilterEnabled ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-400'
+                    }`}
+                  >
+                    {settings.wifeFilterEnabled ? 'Filter Active' : 'Filter Disabled'}
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap gap-1.5">
+                  {settings.wifeFilterKeywords.map((kw) => (
+                    <span
+                      key={kw}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs bg-slate-950 border border-slate-800 text-slate-200"
+                    >
+                      {kw}
+                      <button
+                        onClick={() =>
+                          setSettings((s) => ({
+                            ...s,
+                            wifeFilterKeywords: s.wifeFilterKeywords.filter((k) => k !== kw)
+                          }))
+                        }
+                        className="text-slate-500 hover:text-rose-400"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="Add mute keyword (e.g. 'dentist', 'call')..."
+                    value={newFilterKeyword}
+                    onChange={(e) => setNewFilterKeyword(e.target.value)}
+                    className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-base sm:text-xs text-white"
+                  />
+                  <button
+                    onClick={() => {
+                      const kw = newFilterKeyword.trim().toLowerCase();
+                      if (!kw) return;
+                      setSettings((s) => ({
+                        ...s,
+                        wifeFilterKeywords: [...new Set([...s.wifeFilterKeywords, kw])]
+                      }));
+                      setNewFilterKeyword('');
+                    }}
+                    className="px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 font-bold text-xs"
+                  >
+                    + Add Keyword
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+
+      {/* MOBILE PORTRAIT THUMB-ZONE BOTTOM NAVIGATION BAR */}
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 px-2 py-1.5 grid grid-cols-6 gap-1">
+        {primaryMobileDock.map((item) => {
+          const Icon = item.icon;
+          const isActive = item.matchIds ? item.matchIds.includes(activeTab) : activeTab === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id)}
+              className={`relative flex flex-col items-center justify-center py-2 rounded-2xl text-[11px] font-semibold transition ${
+                isActive ? 'bg-emerald-500/15 text-emerald-400' : 'text-slate-400 active:bg-slate-800'
+              }`}
+            >
+              <Icon className="w-5 h-5 mb-0.5" />
+              <span className="truncate">{item.label}</span>
+              {item.badge > 0 && (
+                <span className="absolute top-1 right-2 w-4 h-4 rounded-full bg-emerald-500 text-slate-950 text-[10px] font-bold flex items-center justify-center">
+                  {item.badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
+
+        <button
+          onClick={() => setMobileDrawerOpen((o) => !o)}
+          className={`flex flex-col items-center justify-center py-2 rounded-2xl text-[11px] font-semibold transition ${
+            mobileDrawerOpen || activeTab === 'launchpad' || activeTab === 'settings'
+              ? 'bg-purple-500/15 text-purple-300'
+              : 'text-slate-400 active:bg-slate-800'
+          }`}
+        >
+          <Sparkles className="w-5 h-5 mb-0.5" />
+          <span>More</span>
+        </button>
+      </nav>
+    </div>
+  );
+}
