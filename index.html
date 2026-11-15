@@ -237,18 +237,18 @@
       color: #94a3b8;
     }
     .print-line-ruled {
-      height: 24px;
-      border-bottom: 1px solid #cbd5e1;
+      height: var(--print-line-height, 24px);
+      border-bottom: 1px solid #94a3b8;
     }
     .print-line-dotted {
-      height: 24px;
-      border-bottom: 1.5px dotted #94a3b8;
+      height: var(--print-line-height, 24px);
+      border-bottom: 1px dashed #64748b;
     }
     .print-box-grid {
-      background-image: radial-gradient(#94a3b8 1px, transparent 1px);
+      background-image: radial-gradient(#64748b 0.85px, transparent 0.85px);
       background-size: 16px 16px;
-      border: 1px solid #cbd5e1;
-      border-radius: 6px;
+      border: 1px solid #94a3b8;
+      border-radius: 4px;
     }
 
     #print-mount {
@@ -408,7 +408,7 @@
 
   <!-- ANALOG NIGHT WATCH & 3-HOLE BINDER PDF BUILDER MODAL -->
   <div id="pdf-builder-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden items-end sm:items-center justify-center p-0 sm:p-4">
-    <div class="lh-surface rounded-t-3xl sm:rounded-2xl w-full max-w-6xl max-h-[94vh] flex flex-col overflow-hidden shadow-2xl">
+    <div class="lh-surface rounded-t-3xl sm:rounded-2xl w-full max-w-7xl max-h-[95vh] flex flex-col overflow-hidden shadow-2xl">
       <!-- Modal Header -->
       <div class="p-4 sm:p-5 border-b lh-border flex flex-wrap items-center justify-between gap-3 shrink-0">
         <div class="flex items-center gap-3">
@@ -416,21 +416,21 @@
             <i data-lucide="printer" class="w-5 h-5"></i>
           </div>
           <div>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 flex-wrap">
               <h3 class="font-bold text-base sm:text-lg lh-text-main">Analog Night Watch & 3-Hole Binder PDF Studio</h3>
-              <span class="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full lh-badge-success">Screen-Free Bedside Sheet</span>
+              <span class="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full lh-badge-success">Ink-Saver Editorial Print</span>
             </div>
-            <p class="text-xs lh-text-sec">Customize your 1–2 page 3-hole punched printout with Tonight’s Plan, Prayer Sanctuary, and Captain’s Log writing lines.</p>
+            <p class="text-xs lh-text-sec">Zero solid black bars • Granular line-count sliders per prompt • 3-Hole US Letter layout</p>
           </div>
         </div>
         <div class="flex items-center gap-2">
-          <button onclick="window.Lighthouse.downloadNightBinderPdf()" class="px-3.5 py-2 rounded-xl lh-btn-primary text-xs flex items-center gap-1.5">
-            <i data-lucide="file-down" class="w-4 h-4"></i>
-            <span>Download PDF</span>
-          </button>
-          <button onclick="window.Lighthouse.triggerNativePrint()" class="px-3.5 py-2 rounded-xl lh-btn-soft text-xs flex items-center gap-1.5">
+          <button onclick="window.Lighthouse.triggerNativePrint()" class="px-3.5 py-2 rounded-xl lh-btn-primary text-xs flex items-center gap-1.5" title="Best quality vector print or Save as PDF">
             <i data-lucide="printer" class="w-4 h-4"></i>
-            <span>Print / Save PDF</span>
+            <span>Print / Save Vector PDF</span>
+          </button>
+          <button onclick="window.Lighthouse.downloadNightBinderPdf()" class="px-3.5 py-2 rounded-xl lh-btn-soft text-xs flex items-center gap-1.5">
+            <i data-lucide="file-down" class="w-4 h-4"></i>
+            <span>Direct Download .PDF</span>
           </button>
           <button onclick="window.Lighthouse.closePdfBuilder()" class="p-2 rounded-xl lh-elevated lh-text-sec hover:lh-text-main">
             <i data-lucide="x" class="w-5 h-5"></i>
@@ -438,8 +438,18 @@
         </div>
       </div>
 
-      <!-- Modal Split Body: Controls Left, Live 8.5x11 Paper Preview Right -->
-      <div id="pdf-builder-body" class="flex-1 overflow-y-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6"></div>
+      <!-- Mobile View Switcher (Controls vs Live Preview) -->
+      <div class="lg:hidden px-4 pt-3 pb-1 border-b lh-border flex items-center gap-2 shrink-0">
+        <button id="pdf-mob-tab-controls" onclick="window.Lighthouse.setPdfMobilePane('controls')" class="flex-1 py-2 rounded-xl text-xs font-bold lh-btn-primary">
+          1. Sliders & Setup
+        </button>
+        <button id="pdf-mob-tab-preview" onclick="window.Lighthouse.setPdfMobilePane('preview')" class="flex-1 py-2 rounded-xl text-xs font-bold lh-elevated lh-text-sec">
+          2. Live Paper Preview
+        </button>
+      </div>
+
+      <!-- Modal Split Body: Controls Left (5 cols), Live 8.5x11 Paper Preview Right (7 cols) -->
+      <div id="pdf-builder-body" class="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-12"></div>
     </div>
   </div>
 
@@ -1558,11 +1568,22 @@
 
       pdfConfig: {
         sheetDate: new Date().toISOString().slice(0, 10),
-        pageTarget: '2page', // '1page' | '2page'
+        pageTarget: '2page', // '2page' | '1page' | 'log_only'
+        mobilePane: 'controls', // 'controls' | 'preview'
         threeHoleMargin: true,
         duplexMirrorMargin: true,
-        lineDensity: 10, // 6 | 10 | 14 | 20 lines per prompt
+        lineDensity: 6, // Master default lines per prompt
+        lineHeightPx: 24, // 18 to 32px
         lineStyle: 'ruled', // 'ruled' | 'dotted' | 'boxed'
+        prayerNoteLines: 1, // 0 to 4 lines under each active prayer card
+        winsLines: 6, // Total lines for 3 Wins (e.g. 2 lines per win)
+        lessonsLines: 4, // Total lines for 2 Lessons (e.g. 2 lines per lesson)
+        intentionLines: 3, // Lines for 1 Primary Intention
+        examenStepLines: 4, // Lines per each of the 5 Examen steps
+        baylorTaskRows: 8, // Number of numbered offload task rows
+        baylorAnchorLines: 3, // Lines for #1 priority task notes
+        deepPrimaryLines: 8, // Lines for Pennebaker/Narrative/Psalm4 primary prompt
+        deepSecondaryLines: 5, // Lines for Pennebaker/Narrative/Psalm4 secondary prompt
         bibleVersion: 'BOTH', // 'NASB' | 'NLT' | 'BOTH'
         includeNightPlan: true,
         selectedNightCardIds: ['nw-1', 'nw-2', 'nw-7', 'nw-9', 'nw-13', 'nw-17'],
@@ -1570,7 +1591,7 @@
         guidedPrayerMethod: 'PRAY', // 'PRAY' | 'LORDS_PRAYER' | 'NONE'
         selectedJesusThemeIds: ['jp-1', 'jp-3', 'jp-7'],
         includeCaptainsLog: true,
-        selectedJournalModes: ['baylor_offload', 'examen', 'psalm4']
+        selectedJournalModes: ['closure_321']
       }
     };
 
@@ -2619,6 +2640,35 @@
       const activeBoardCards = (state.prayerCards || []).filter((c) => !c.isAnswered && c.onActiveBoard);
       const allIntercessionCards = (state.prayerCards || []).filter((c) => !c.isAnswered);
       const answeredCards = (state.prayerCards || []).filter((c) => c.isAnswered);
+      const sub = state.prayerSubTab || 'board';
+
+      const praySteps = [
+        {
+          code: 'P',
+          title: 'Pause & Be Still (Psalm 46:10)',
+          verse: '“Cease striving and know that I am God.” (NASB) • “Be still, and know that I am God!” (NLT)',
+          prompt: 'Take 3 slow nasal breaths. Release the velocity of your workday and become present to the Father who is already here.'
+        },
+        {
+          code: 'R',
+          title: 'Rejoice & Hallow His Name (Matthew 6:9)',
+          verse: '“Our Father who is in heaven, Hallowed be Your name.” (NASB)',
+          prompt: 'Adore God for His character—His faithfulness, mercy, and sovereignty—and thank Him aloud for 2 gifts from the last 24 hours.'
+        },
+        {
+          code: 'A',
+          title: 'Ask & Intercede (Matthew 6:11 • John 15:7)',
+          verse: '“Give us this day our daily bread.” (NASB) • “Ask whatever you wish, and it will be done for you.”',
+          prompt: 'Lift up Regla, your family, the Sunday Safety Team, and the specific cards pinned to your Active Prayer Board below.'
+        },
+        {
+          code: 'Y',
+          title: 'Yield & Surrender (Luke 22:42 • Psalm 4:8)',
+          verse: '“Yet not My will, but Yours be done.” (NASB)',
+          prompt: 'Open your hands physically. Hand over any unfinished projects, family concerns, or tomorrow’s uncertainties into the Father’s care.'
+        }
+      ];
+      const curStep = praySteps[state.guidedStepIndex || 0] || praySteps[0];
 
       return `
         <div class="space-y-6">
@@ -2628,7 +2678,7 @@
               <div>
                 <span class="text-[11px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full lh-badge">Sanctuary Main Board</span>
                 <h3 class="text-lg sm:text-xl font-bold lh-text-main mt-1">Today’s Active Prayer Watch (${activeBoardCards.length} Pinned)</h3>
-                <p class="text-xs lh-text-sec">Tap any card to open the full Scripture & prayer detail modal, or print your Prayer & Night Binder Sheet for screen-free evening intercession.</p>
+                <p class="text-xs lh-text-sec">Tap any card to open its Scripture & notes modal, log today’s intercession, or print your screen-free Night Prayer & Binder Sheet.</p>
               </div>
               <div class="flex flex-wrap items-center gap-2">
                 <button onclick="window.Lighthouse.openPdfBuilder()"
@@ -2643,6 +2693,429 @@
                 </button>
               </div>
             </div>
+
+            ${
+              activeBoardCards.length === 0
+                ? `<p class="text-xs lh-text-sec py-4 text-center">No cards pinned to your Active Prayer Board yet. Pin cards from your Intercession Deck or Jesus’s Teachings below.</p>`
+                : `<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    ${activeBoardCards
+                      .map(
+                        (c) => `
+                        <div class="p-3.5 rounded-xl lh-elevated flex flex-col justify-between gap-3">
+                          <div onclick="window.Lighthouse.openPrayerCardDetail('${c.id}')" class="cursor-pointer space-y-1.5">
+                            <div class="flex items-center justify-between gap-1.5">
+                              <span class="text-[10px] font-semibold uppercase tracking-wider truncate" style="color: var(--accent-primary);">${escapeHtml(c.category)}</span>
+                              <span class="text-[10px] font-mono-code lh-text-sec shrink-0">${c.prayedCount || 0}x</span>
+                            </div>
+                            <h4 class="font-bold text-sm lh-text-main leading-snug">${escapeHtml(c.title)}</h4>
+                            <p class="text-[11px] font-mono-code lh-text-sec">${escapeHtml(c.scriptureTag || '')}</p>
+                            <p class="text-xs lh-text-sec line-clamp-2">${escapeHtml(c.notes || '')}</p>
+                          </div>
+                          <div class="pt-2 border-t lh-border flex items-center justify-between gap-1.5">
+                            <button onclick="window.Lighthouse.prayForCard('${c.id}')"
+                              class="flex-1 py-1.5 px-2.5 rounded-lg lh-btn-primary text-[11px] flex items-center justify-center gap-1">
+                              <i data-lucide="heart" class="w-3 h-3"></i>
+                              <span>Amen (+1)</span>
+                            </button>
+                            <button onclick="window.Lighthouse.openPrayerCardDetail('${c.id}')"
+                              class="p-1.5 rounded-lg lh-surface lh-text-sec hover:lh-text-main" title="Details">
+                              <i data-lucide="book-open" class="w-3.5 h-3.5"></i>
+                            </button>
+                            <button onclick="window.Lighthouse.togglePrayerBoardPin('${c.id}')"
+                              class="p-1.5 rounded-lg lh-surface lh-text-muted hover:lh-text-main" title="Unpin from Active Board">
+                              <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                            </button>
+                          </div>
+                        </div>
+                      `
+                      )
+                      .join('')}
+                  </div>`
+            }
+          </div>
+
+          <!-- SANCTUARY SUB-NAVIGATION TABS -->
+          <div class="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+            ${[
+              { id: 'board', label: `All Intercession Cards (${allIntercessionCards.length})`, icon: 'layers' },
+              { id: 'jesus', label: `Jesus’s Prayer Teachings (${JESUS_PRAYER_THEMES.length})`, icon: 'book-open' },
+              { id: 'guided', label: 'Guided P.R.A.Y. Sanctuary', icon: 'Flame' },
+              { id: 'ebenezer', label: `Answered Ebenezer Vault (${answeredCards.length})`, icon: 'award' }
+            ]
+              .map(
+                (t) => `
+                <button onclick="window.Lighthouse.setPrayerSubTab('${t.id}')"
+                  class="px-3.5 py-2 rounded-xl text-xs font-semibold shrink-0 transition ${
+                    sub === t.id ? 'lh-btn-primary' : 'lh-surface lh-text-sec hover:lh-text-main'
+                  }">
+                  ${escapeHtml(t.label)}
+                </button>
+              `
+              )
+              .join('')}
+          </div>
+
+          <!-- SUB-VIEW 1: ALL INTERCESSION CARDS + ADD NEW CARD -->
+          ${
+            sub === 'board'
+              ? `
+                <div class="space-y-4">
+                  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                    ${allIntercessionCards
+                      .map(
+                        (c) => `
+                        <div class="lh-surface rounded-2xl p-4 flex flex-col justify-between gap-3">
+                          <div onclick="window.Lighthouse.openPrayerCardDetail('${c.id}')" class="cursor-pointer space-y-1.5">
+                            <div class="flex items-center justify-between gap-2">
+                              <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full lh-badge">${escapeHtml(c.category)}</span>
+                              <span class="text-xs font-mono-code lh-text-sec">Prayed ${c.prayedCount || 0}x • ${escapeHtml(c.lastPrayed || 'New')}</span>
+                            </div>
+                            <h4 class="font-bold text-sm sm:text-base lh-text-main">${escapeHtml(c.title)}</h4>
+                            <p class="text-xs font-mono-code" style="color: var(--secondary-accent);">${escapeHtml(c.scriptureTag || '')}</p>
+                            <p class="text-xs lh-text-sec leading-relaxed">${escapeHtml(c.notes || '')}</p>
+                          </div>
+                          <div class="pt-2.5 border-t lh-border flex items-center justify-between gap-2">
+                            <button onclick="window.Lighthouse.prayForCard('${c.id}')" class="px-3 py-1.5 rounded-lg lh-btn-primary text-xs">
+                              Amen (+1)
+                            </button>
+                            <div class="flex items-center gap-1.5">
+                              <button onclick="window.Lighthouse.togglePrayerBoardPin('${c.id}')"
+                                class="px-2.5 py-1.5 rounded-lg text-xs font-semibold ${c.onActiveBoard ? 'lh-badge-success' : 'lh-elevated lh-text-main'}">
+                                ${c.onActiveBoard ? '✓ Pinned' : '+ Pin Board'}
+                              </button>
+                              <button onclick="window.Lighthouse.markPrayerAnswered('${c.id}')"
+                                class="px-2 py-1.5 rounded-lg lh-elevated lh-text-sec hover:lh-text-main text-xs" title="Mark Answered">
+                                Answered
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      `
+                      )
+                      .join('')}
+                  </div>
+
+                  <!-- Add New Intercession Card -->
+                  <div class="lh-surface rounded-2xl p-4 sm:p-5 space-y-3">
+                    <h4 class="font-bold text-sm lh-text-main">Add New Intercession Card</h4>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      <input id="pray-title" type="text" placeholder="Person or Prayer Target..." class="px-3 py-2 rounded-xl lh-input" />
+                      <select id="pray-cat" class="px-3 py-2 rounded-xl lh-input">
+                        <option value="Marriage & Family">Marriage & Family</option>
+                        <option value="Church & Ministry">Church & Ministry</option>
+                        <option value="Personal Walk">Personal Walk</option>
+                        <option value="Health & Strength">Health & Strength</option>
+                        <option value="Mission">Mission & Witness</option>
+                      </select>
+                      <input id="pray-ref" type="text" placeholder="Scripture Anchor (e.g. Col 1:9-10)" class="px-3 py-2 rounded-xl lh-input" />
+                    </div>
+                    <textarea id="pray-notes" rows="2" placeholder="Specific prayer request or Scripture reflection..." class="w-full p-3 rounded-xl lh-input"></textarea>
+                    <button onclick="window.Lighthouse.createPrayerCard()" class="px-4 py-2 rounded-xl lh-btn-primary text-xs">
+                      + Add & Pin to Prayer Board
+                    </button>
+                  </div>
+                </div>
+              `
+              : ''
+          }
+
+          <!-- SUB-VIEW 2: JESUS'S PRAYER TEACHINGS (12 THEMES WITH NASB & NLT LENSES) -->
+          ${
+            sub === 'jesus'
+              ? `
+                <div class="space-y-3">
+                  <div class="flex items-center justify-between flex-wrap gap-2">
+                    <p class="text-xs lh-text-sec">Tap any card to compare the <strong>NASB Structural Lens</strong> and <strong>NLT Relational Heart Lens</strong>, or pin it to your Active Board.</p>
+                  </div>
+                  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                    ${JESUS_PRAYER_THEMES.map((t) => {
+                      const inPdf = (state.pdfConfig?.selectedJesusThemeIds || []).includes(t.id);
+                      return `
+                        <div class="lh-surface rounded-2xl p-4 flex flex-col justify-between gap-3">
+                          <div onclick="window.Lighthouse.openJesusTeachingDetail('${t.id}')" class="cursor-pointer space-y-2">
+                            <div class="flex items-center justify-between gap-2">
+                              <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full lh-badge">${escapeHtml(t.category)}</span>
+                              <span class="text-xs font-mono-code lh-text-sec">${escapeHtml(t.reference)}</span>
+                            </div>
+                            <h4 class="font-bold text-sm sm:text-base lh-text-main leading-snug">${escapeHtml(t.theme)}</h4>
+                            <p class="text-xs lh-text-sec leading-relaxed">${escapeHtml(t.summary)}</p>
+                            <p class="text-xs italic font-serif-editorial lh-text-main pt-1">“${escapeHtml(t.samplePrayer)}”</p>
+                          </div>
+                          <div class="pt-2.5 border-t lh-border flex items-center justify-between gap-1.5">
+                            <button onclick="window.Lighthouse.openJesusTeachingDetail('${t.id}')"
+                              class="text-xs font-semibold lh-text-sec hover:lh-text-main flex items-center gap-1">
+                              <i data-lucide="book-open" class="w-3.5 h-3.5" style="color: var(--accent-primary);"></i>
+                              <span>NASB / NLT</span>
+                            </button>
+                            <div class="flex items-center gap-1">
+                              <button onclick="window.Lighthouse.togglePdfJesusTheme('${t.id}', true)"
+                                class="px-2 py-1 rounded-lg text-[11px] font-semibold ${inPdf ? 'lh-badge-success' : 'lh-elevated lh-text-sec'}">
+                                ${inPdf ? '✓ In PDF' : '+ PDF'}
+                              </button>
+                              <button onclick="window.Lighthouse.addJesusThemeToBoard('${t.id}')"
+                                class="px-2.5 py-1 rounded-lg lh-btn-primary text-xs">
+                                + Pin Board
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      `;
+                    }).join('')}
+                  </div>
+                </div>
+              `
+              : ''
+          }
+
+          <!-- SUB-VIEW 3: GUIDED P.R.A.Y. DEVOTIONAL SANCTUARY -->
+          ${
+            sub === 'guided'
+              ? `
+                <div class="lh-surface rounded-2xl p-5 sm:p-6 space-y-5">
+                  <div class="flex items-center justify-between flex-wrap gap-2 border-b lh-border pb-3">
+                    <div>
+                      <span class="text-[11px] font-semibold uppercase tracking-wider" style="color: var(--accent-primary);">Lectio 365 Guided Method</span>
+                      <h4 class="text-lg font-bold lh-text-main">Step ${(state.guidedStepIndex || 0) + 1} of 4: ${escapeHtml(curStep.title)}</h4>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                      ${praySteps
+                        .map(
+                          (st, idx) => `
+                          <span class="w-7 h-7 rounded-lg text-xs font-bold flex items-center justify-center ${
+                            idx === (state.guidedStepIndex || 0) ? 'lh-btn-primary' : 'lh-elevated lh-text-sec'
+                          }">${st.code}</span>
+                        `
+                        )
+                        .join('')}
+                    </div>
+                  </div>
+                  <div class="p-4 rounded-xl lh-elevated space-y-2">
+                    <p class="font-serif-editorial italic text-base sm:text-lg lh-text-main">${escapeHtml(curStep.verse)}</p>
+                    <p class="text-xs sm:text-sm lh-text-sec leading-relaxed">${escapeHtml(curStep.prompt)}</p>
+                  </div>
+                  <div class="flex items-center justify-between pt-2">
+                    <button onclick="window.Lighthouse.stepGuidedPrayer(-1)" class="px-4 py-2 rounded-xl lh-elevated text-xs font-semibold lh-text-sec">
+                      ← Previous Step
+                    </button>
+                    <button onclick="window.Lighthouse.stepGuidedPrayer(1)" class="px-5 py-2.5 rounded-xl lh-btn-primary text-xs">
+                      ${(state.guidedStepIndex || 0) === 3 ? 'Amen • Complete Sanctuary' : 'Next Movement →'}
+                    </button>
+                  </div>
+                </div>
+              `
+              : ''
+          }
+
+          <!-- SUB-VIEW 4: EBENEZER ANSWERED PRAYER VAULT -->
+          ${
+            sub === 'ebenezer'
+              ? `
+                <div class="lh-surface rounded-2xl p-4 sm:p-5 space-y-3">
+                  <h4 class="font-bold text-base lh-text-main">Ebenezer Vault — “Thus Far the Lord Has Helped Us” (1 Samuel 7:12)</h4>
+                  ${
+                    answeredCards.length === 0
+                      ? `<p class="text-xs lh-text-sec py-4">When God answers a prayer on your board, tap "Answered" to record it permanently in this memorial vault.</p>`
+                      : `<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          ${answeredCards
+                            .map(
+                              (c) => `
+                              <div class="p-3.5 rounded-xl lh-elevated space-y-1">
+                                <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full lh-badge-success">Answered • ${c.prayedCount || 1} Prayers Logged</span>
+                                <h5 class="font-bold text-sm lh-text-main pt-1">${escapeHtml(c.title)}</h5>
+                                <p class="text-xs lh-text-sec">${escapeHtml(c.notes || '')}</p>
+                              </div>
+                            `
+                            )
+                            .join('')}
+                        </div>`
+                  }
+                </div>
+              `
+              : ''
+          }
+        </div>
+      `;
+    }
+
+    // =========================================================================
+    // STATION 6: CHARTED COURSE (PSYCHOLOGY & NEUROSCIENCE GOAL ENGINE)
+    // =========================================================================
+    function renderGoalsView() {
+      const activeGoals = (state.goals || []).filter((g) => g.status === 'active');
+      const maxWip = state.settings.maxActiveGoals || 3;
+
+      return `
+        <div class="space-y-6">
+          <!-- ANTERIOR MID-CINGULATE CORTEX (aMCC) DAILY FRICTION BUILDER -->
+          <div class="lh-surface rounded-2xl p-4 sm:p-6 space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <span class="text-[11px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full lh-badge">Neuroscience Tenacity Builder</span>
+                <h3 class="text-lg sm:text-xl font-bold lh-text-main mt-1">Anterior Mid-Cingulate Cortex (aMCC) Daily Friction Score</h3>
+                <p class="text-xs lh-text-sec">Your aMCC grows when you lean into healthy micro-friction (e.g., 30-minute Wake-to-Workout ramp with zero snooze).</p>
+              </div>
+              <div class="text-right">
+                <span class="text-2xl font-bold font-mono-code" style="color: var(--accent-primary);">${state.dailyAmccScore || 7}/10</span>
+                <span class="text-[11px] lh-text-sec block">Today’s Tenacity Load</span>
+              </div>
+            </div>
+            <div class="flex items-center gap-4">
+              <span class="text-xs lh-text-sec">Low Friction (1)</span>
+              <input type="range" min="1" max="10" value="${state.dailyAmccScore || 7}"
+                oninput="window.Lighthouse.setAmccScore(this.value)" class="flex-1" />
+              <span class="text-xs lh-text-sec">High Tenacity (10)</span>
+            </div>
+          </div>
+
+          <!-- WOOP + GOLLWITZER IMPLEMENTATION INTENTION BEACONS -->
+          <div class="space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 class="text-base sm:text-lg font-bold lh-text-main">Active Course Beacons (${activeGoals.length}/${maxWip} WIP Focus Limit)</h3>
+                <p class="text-xs lh-text-sec">Uses Gabriele Oettingen’s Mental Contrasting (WOOP) + Peter Gollwitzer’s IF-THEN Implementation Intentions.</p>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 gap-4">
+              ${activeGoals
+                .map(
+                  (g) => `
+                  <div class="lh-surface rounded-2xl p-4 sm:p-5 space-y-4">
+                    <div class="flex flex-wrap items-start justify-between gap-3 pb-3 border-b lh-border">
+                      <div>
+                        <div class="flex items-center gap-2">
+                          <span class="text-[10px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full lh-badge">Active Beacon</span>
+                          <span class="text-xs font-mono-code lh-text-sec">🔥 ${g.streakDays || 0}-Day Streak</span>
+                        </div>
+                        <h4 class="text-base sm:text-lg font-bold lh-text-main mt-1">${escapeHtml(g.title)}</h4>
+                        <p class="text-xs italic lh-text-sec mt-0.5">Identity Anchor: “${escapeHtml(g.identityStatement || '')}”</p>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <button onclick="window.Lighthouse.logGoalRep('${g.id}')" class="px-3 py-1.5 rounded-xl lh-btn-primary text-xs">
+                          + Log Today’s Rep (${g.progressPct || 0}%)
+                        </button>
+                        <button onclick="window.Lighthouse.pushGoalToWatch('${g.id}')" class="px-3 py-1.5 rounded-xl lh-btn-soft text-xs">
+                          + 24h Watch
+                        </button>
+                        <button onclick="window.Lighthouse.deleteGoal('${g.id}')" class="p-1.5 rounded-lg lh-text-muted hover:lh-text-main">
+                          <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                      <div class="p-3 rounded-xl lh-elevated space-y-1">
+                        <span class="font-bold uppercase tracking-wider lh-text-sec block text-[10px]">Wish & Best Outcome</span>
+                        <p class="lh-text-main font-medium">${escapeHtml(g.wish || '')}</p>
+                        <p class="lh-text-sec">${escapeHtml(g.outcome || '')}</p>
+                      </div>
+                      <div class="p-3 rounded-xl lh-elevated space-y-1">
+                        <span class="font-bold uppercase tracking-wider lh-text-sec block text-[10px]">Critical Internal Obstacle</span>
+                        <p class="lh-text-main">${escapeHtml(g.obstacle || '')}</p>
+                      </div>
+                      <div class="p-3 rounded-xl lh-surface border-l-4 space-y-1" style="border-left-color: var(--accent-primary);">
+                        <span class="font-bold uppercase tracking-wider block text-[10px]" style="color: var(--accent-primary);">Gollwitzer IF-THEN Plan</span>
+                        <p class="lh-text-main font-semibold">${escapeHtml(g.ifThenPlan || '')}</p>
+                      </div>
+                    </div>
+
+                    <div class="w-full h-2 rounded-full lh-elevated overflow-hidden">
+                      <div class="h-full rounded-full transition-all" style="width: ${g.progressPct || 10}%; background-color: var(--accent-primary);"></div>
+                    </div>
+                  </div>
+                `
+                )
+                .join('')}
+            </div>
+
+            <!-- Add New WOOP Goal Form -->
+            <div class="lh-surface rounded-2xl p-4 sm:p-5 space-y-3">
+              <h4 class="font-bold text-sm lh-text-main">Chart a New WOOP + IF-THEN Beacon</h4>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <input id="goal-title" type="text" placeholder="Goal Title (e.g., 30-Min Wake-to-Workout)" class="px-3 py-2 rounded-xl lh-input" />
+                <input id="goal-identity" type="text" placeholder="Identity Anchor (Who I am becoming...)" class="px-3 py-2 rounded-xl lh-input" />
+                <input id="goal-wish" type="text" placeholder="Specific Wish / Target..." class="px-3 py-2 rounded-xl lh-input" />
+                <input id="goal-outcome" type="text" placeholder="Best Physiological / Spiritual Outcome..." class="px-3 py-2 rounded-xl lh-input" />
+                <input id="goal-obstacle" type="text" placeholder="Main Internal Obstacle..." class="px-3 py-2 rounded-xl lh-input" />
+                <input id="goal-ifthen" type="text" placeholder="IF [Obstacle], THEN I WILL [Immediate Action]..." class="px-3 py-2 rounded-xl lh-input" />
+              </div>
+              <button onclick="window.Lighthouse.createGoal()" class="px-4 py-2 rounded-xl lh-btn-primary text-xs">
+                + Add WOOP Beacon
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // =========================================================================
+    // STATION 7: FLEET DOCK (CODED SITES & WEB APPS LAUNCHPAD WITH REAL QR)
+    // =========================================================================
+    function renderLaunchpadView() {
+      return `
+        <div class="space-y-6">
+          <div class="lh-surface rounded-2xl p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <span class="text-[11px] font-semibold uppercase tracking-wider lh-text-sec">Developer App Dock</span>
+              <h3 class="text-lg sm:text-xl font-bold lh-text-main mt-0.5">Fleet Dock — Coded Sites & Web Apps (${(state.codedSites || []).length})</h3>
+              <p class="text-xs lh-text-sec">Launch your custom apps, jot down next-feature ideas, or tap QR to scan any app onto another phone or tablet.</p>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            ${(state.codedSites || [])
+              .map(
+                (site) => `
+                <div class="lh-surface rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-4">
+                  <div class="space-y-2.5">
+                    <div class="flex items-center justify-between gap-2">
+                      <span class="text-[10px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full lh-badge">${escapeHtml(site.category || 'Web App')}</span>
+                      <div class="flex items-center gap-1.5">
+                        <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full lh-badge-success">${escapeHtml(site.status || 'Live')}</span>
+                        <button onclick="window.Lighthouse.openQrModal('${site.id}')"
+                          class="p-1.5 rounded-lg lh-elevated lh-text-sec hover:lh-text-main flex items-center gap-1 text-xs" title="Show Scannable QR Code">
+                          <i data-lucide="qr-code" class="w-4 h-4" style="color: var(--accent-primary);"></i>
+                          <span class="text-[11px] font-semibold">QR</span>
+                        </button>
+                        <button onclick="window.Lighthouse.deleteSite('${site.id}')" class="p-1.5 rounded-lg lh-text-muted hover:lh-text-main">
+                          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h4 class="font-bold text-base lh-text-main">${escapeHtml(site.title)}</h4>
+                      <p class="text-xs lh-text-sec mt-0.5">${escapeHtml(site.tagline || '')}</p>
+                      <p class="text-[11px] font-mono-code lh-text-muted truncate mt-1">${escapeHtml(site.url)}</p>
+                    </div>
+
+                    <div class="pt-1">
+                      <label class="text-[10px] font-semibold uppercase tracking-wider lh-text-sec block mb-1">Quick Scratchpad (Next Feature / Fix):</label>
+                      <input type="text" value="${escapeHtml(site.nextTodo || '')}"
+                        oninput="window.Lighthouse.updateSiteTodo('${site.id}', this.value)"
+                        placeholder="Jot next feature idea or bug fix..."
+                        class="w-full px-3 py-1.5 rounded-xl lh-input text-xs" />
+                    </div>
+                  </div>
+
+                  <div class="pt-2.5 border-t lh-border flex items-center justify-between gap-2">
+                    <a href="${escapeHtml(site.url)}" target="_blank" rel="noopener noreferrer"
+                      class="flex-1 py-2 px-3 rounded-xl lh-btn-primary text-xs flex items-center justify-center gap-1.5">
+                      <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+                      <span>Launch App</span>
+                    </a>
+                    <button onclick="window.Lighthouse.openQrModal('${site.id}')"
+                      class="py-2 px-3 rounded-xl lh-btn-soft text-xs flex items-center gap-1.5">
+                      <i data-lucide="qr-code" class="w-3.5 h-3.5"></i>
+                      <span>Scan QR</span>
+                    </button>
+                  </div>
+                </div>
+              `
+              )
+              .join('')}
+          </div>
+
           <!-- ADD NEW CODED SITE -->
           <div class="lh-surface rounded-2xl p-4 sm:p-5 space-y-3">
             <h4 class="font-bold text-sm lh-text-main">Add Coded Web App to Fleet Dock</h4>
@@ -2658,37 +3131,155 @@
     }
 
     // =========================================================================
-    // REAL QR CODE GENERATOR ENGINE (SVG MATRIX + FALLBACK)
+    // STATION 8: THEMES & FILTERS (SETTINGS — CLEAN, NO SUPABASE/JSON CLUTTER)
     // =========================================================================
-    function generateRealQrSvg(urlText) {
-      const cleanUrl = (urlText || 'https://schuler314.github.io/').trim();
-      try {
-        if (typeof window.qrcode === 'function') {
-          const qr = window.qrcode(0, 'M');
-          qr.addData(cleanUrl);
-          qr.make();
-          return qr.createSvgTag({ cellSize: 5, margin: 3, scalable: true });
-        }
-      } catch {
-        // Fallback if CDN blocked
-      }
-      const encoded = encodeURIComponent(cleanUrl);
-      return `<img src="https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=10&data=${encoded}" alt="QR Code" class="w-48 h-48 rounded-xl bg-white p-2" />`;
+    function renderSettingsView() {
+      return `
+        <div class="space-y-6">
+          <!-- 4 GRAPHIC DESIGN COLOR THEMES -->
+          <div class="lh-surface rounded-2xl p-4 sm:p-6 space-y-4">
+            <div>
+              <span class="text-[11px] font-semibold uppercase tracking-wider lh-text-sec">60-30-10 Color Theory Palettes</span>
+              <h3 class="text-lg sm:text-xl font-bold lh-text-main mt-0.5">Lighthouse Appearance & Color Themes</h3>
+              <p class="text-xs lh-text-sec">Designed for calm legibility in both bright daylight and low-glare evening watch.</p>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              ${COLOR_THEMES.map((t) => {
+                const isSelected = (state.settings.theme || 'nordic') === t.id;
+                return `
+                  <button onclick="window.Lighthouse.selectTheme('${t.id}')"
+                    class="p-4 rounded-2xl text-left transition flex flex-col justify-between gap-3 ${
+                      isSelected ? 'lh-btn-soft' : 'lh-elevated lh-text-main'
+                    }">
+                    <div class="space-y-1">
+                      <div class="flex items-center justify-between">
+                        <span class="font-bold text-sm lh-text-main">${escapeHtml(t.name)}</span>
+                        ${isSelected ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full lh-badge">Active</span>' : ''}
+                      </div>
+                      <p class="text-xs lh-text-sec">${escapeHtml(t.subtitle)}</p>
+                    </div>
+                    <div class="flex items-center gap-2 pt-1">
+                      ${t.swatches
+                        .map(
+                          (hex) => `<span class="w-6 h-6 rounded-lg border border-white/20 shadow-sm" style="background-color: ${hex};"></span>`
+                        )
+                        .join('')}
+                    </div>
+                  </button>
+                `;
+              }).join('')}
+            </div>
+          </div>
+
+          <!-- CIRCADIAN ANCHORS & BIBLE STUDY LENS -->
+          <div class="lh-surface rounded-2xl p-4 sm:p-6 space-y-4">
+            <h3 class="text-base sm:text-lg font-bold lh-text-main">Circadian Daily Anchors & Scripture Lens</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label class="text-xs font-semibold lh-text-sec block mb-1">Target Wake Time</label>
+                <input type="time" value="${escapeHtml(state.settings.wakeTime || '05:30')}"
+                  onchange="window.Lighthouse.updateSetting('wakeTime', this.value)"
+                  class="w-full px-3 py-2 rounded-xl lh-input font-mono-code" />
+              </div>
+              <div>
+                <label class="text-xs font-semibold lh-text-sec block mb-1">Target Sleep Time</label>
+                <input type="time" value="${escapeHtml(state.settings.sleepTime || '22:00')}"
+                  onchange="window.Lighthouse.updateSetting('sleepTime', this.value)"
+                  class="w-full px-3 py-2 rounded-xl lh-input font-mono-code" />
+              </div>
+              <div>
+                <label class="text-xs font-semibold lh-text-sec block mb-1">Default Bible Study Lens</label>
+                <select onchange="window.Lighthouse.updateSetting('studyLens', this.value)" class="w-full px-3 py-2 rounded-xl lh-input">
+                  <option value="BOTH" ${state.settings.studyLens === 'BOTH' ? 'selected' : ''}>Both NASB & NLT Lenses</option>
+                  <option value="NASB" ${state.settings.studyLens === 'NASB' ? 'selected' : ''}>NASB (Literal Structure)</option>
+                  <option value="NLT" ${state.settings.studyLens === 'NLT' ? 'selected' : ''}>NLT (Relational Heart)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- SHARED CALENDAR "FOG FILTER" (WIFE FILTER RULES) -->
+          <div class="lh-surface rounded-2xl p-4 sm:p-6 space-y-4">
+            <div class="flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <h3 class="text-base sm:text-lg font-bold lh-text-main">Shared Calendar “Fog Filter” Rules</h3>
+                <p class="text-xs lh-text-sec">Automatically mutes personal reminders on shared calendars so your Watchtower only shows what matters to you.</p>
+              </div>
+              <button onclick="window.Lighthouse.toggleWifeFilter()"
+                class="px-3.5 py-2 rounded-xl text-xs font-semibold ${state.settings.wifeFilterEnabled ? 'lh-btn-primary' : 'lh-elevated lh-text-sec'}">
+                ${state.settings.wifeFilterEnabled ? 'Fog Filter: ON' : 'Fog Filter: OFF'}
+              </button>
+            </div>
+
+            <div class="flex flex-wrap gap-1.5">
+              ${(state.settings.wifeFilterKeywords || [])
+                .map(
+                  (kw) => `
+                  <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs lh-elevated lh-text-main">
+                    <span>${escapeHtml(kw)}</span>
+                    <button onclick="window.Lighthouse.removeFilterKeyword('${escapeHtml(kw)}')" class="lh-text-muted hover:lh-text-main">
+                      <i data-lucide="x" class="w-3 h-3"></i>
+                    </button>
+                  </span>
+                `
+                )
+                .join('')}
+            </div>
+
+            <div class="flex items-center gap-2 pt-1">
+              <input id="new-filter-kw" type="text" placeholder="Add muted keyword (e.g., remind, appt)..." class="flex-1 px-3 py-2 rounded-xl lh-input" />
+              <button onclick="window.Lighthouse.addFilterKeyword()" class="px-4 py-2 rounded-xl lh-btn-primary text-xs shrink-0">+ Add Keyword</button>
+            </div>
+          </div>
+        </div>
+      `;
     }
 
     // =========================================================================
-    // ANALOG NIGHT WATCH & 3-HOLE BINDER PDF BUILDER ENGINE
+    // REAL QR CODE GENERATOR ENGINE (SVG MATRIX + FALLBACK)
     // =========================================================================
-    function renderRuledLinesHtml(count, style) {
-      const num = Number(count) || 10;
+    // ANALOG NIGHT WATCH & 3-HOLE BINDER PDF BUILDER ENGINE (INK-SAVER + SLIDERS)
+    // =========================================================================
+    function renderRuledLinesHtml(count, style, lineHeightPx = 24) {
+      const num = Math.max(1, Number(count) || 5);
+      const lh = Math.max(16, Number(lineHeightPx) || 24);
       if (style === 'boxed') {
-        const heightPx = Math.max(96, num * 20);
+        const heightPx = Math.max(64, num * lh);
         return `<div class="print-box-grid w-full my-1.5" style="height: ${heightPx}px;"></div>`;
       }
-      const cls = style === 'dotted' ? 'print-line-dotted' : 'print-line-ruled';
-      let html = '<div class="space-y-0.5 my-1">';
+      const borderStyle = style === 'dotted' ? '1px dashed #64748b' : '1px solid #94a3b8';
+      let html = '<div class="my-1">';
       for (let i = 0; i < num; i++) {
-        html += `<div class="${cls}"></div>`;
+        html += `<div style="height: ${lh}px; border-bottom: ${borderStyle};"></div>`;
+      }
+      html += '</div>';
+      return html;
+    }
+
+    function renderNumberedItemBlocksHtml(itemCount, totalLines, style, lineHeightPx = 24) {
+      const total = Math.max(itemCount, Number(totalLines) || itemCount * 2);
+      const baseLinesPerItem = Math.floor(total / itemCount);
+      const remainder = total % itemCount;
+      const lh = Math.max(16, Number(lineHeightPx) || 24);
+      const borderStyle = style === 'dotted' ? '1px dashed #64748b' : '1px solid #94a3b8';
+
+      let html = '<div class="space-y-1.5 my-1.5">';
+      for (let itemIdx = 1; itemIdx <= itemCount; itemIdx++) {
+        const linesForThis = baseLinesPerItem + (itemIdx <= remainder ? 1 : 0);
+        html += `<div class="avoid-break">`;
+        for (let l = 0; l < linesForThis; l++) {
+          if (l === 0) {
+            html += `
+              <div style="height: ${lh}px; border-bottom: ${borderStyle}; display: flex; align-items: flex-end; padding-bottom: 2px;">
+                <span style="font-size: 10px; font-weight: 700; color: #1e293b; font-family: monospace; margin-right: 6px;">${itemIdx}.</span>
+              </div>
+            `;
+          } else {
+            html += `<div style="height: ${lh}px; border-bottom: ${borderStyle}; margin-left: 16px;"></div>`;
+          }
+        }
+        html += `</div>`;
       }
       html += '</div>';
       return html;
@@ -2705,64 +3296,71 @@
     }
 
     function buildPrintableBinderSheetHtml() {
-      const cfg = state.pdfConfig || INITIAL_STATE.pdfConfig;
-      const lineCount = Number(cfg.lineDensity) || 10;
+      const cfg = { ...INITIAL_STATE.pdfConfig, ...(state.pdfConfig || {}) };
       const lineStyle = cfg.lineStyle || 'ruled';
-      const padLeft = cfg.threeHoleMargin ? 'padding-left: 0.9in; padding-right: 0.45in;' : 'padding-left: 0.5in; padding-right: 0.5in;';
+      const lh = Number(cfg.lineHeightPx) || 24;
+      const padLeft = cfg.threeHoleMargin ? 'padding-left: 0.88in; padding-right: 0.45in;' : 'padding-left: 0.5in; padding-right: 0.5in;';
       const padPage2 =
         cfg.threeHoleMargin && cfg.duplexMirrorMargin
-          ? 'padding-right: 0.9in; padding-left: 0.45in;'
+          ? 'padding-right: 0.88in; padding-left: 0.45in;'
           : padLeft;
+
+      // INK-SAVER EDITORIAL SECTION HEADER HELPER (ZERO SOLID BLACK FILL)
+      const editorialHeader = (romanTitle, rightSubtitle) => `
+        <div style="border-top: 1.5px solid #0f172a; border-bottom: 1px solid #334155; padding: 4px 0; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: baseline; background: #ffffff;">
+          <h2 style="font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: #0f172a; margin: 0;">
+            ${romanTitle}
+          </h2>
+          <span style="font-size: 9.5px; color: #475569; font-family: monospace;">${rightSubtitle}</span>
+        </div>
+      `;
 
       // 1. Night Watch Wind-Down Plan Items
       const selectedNightCards = (cfg.selectedNightCardIds || [])
         .map((id) => NIGHT_LIBRARY.find((c) => c.id === id))
         .filter(Boolean);
 
-      const nightPlanSectionHtml = cfg.includeNightPlan
-        ? `
-          <div class="avoid-break mb-5">
-            <div style="border-bottom: 2px solid #0f172a; padding-bottom: 4px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: baseline;">
-              <h2 style="font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: #0f172a;">
-                I. Tonight’s Night Watch Wind-Down Checklist
-              </h2>
-              <span style="font-size: 10px; color: #475569; font-family: monospace;">Target Sleep: ${escapeHtml(state.settings.sleepTime || '22:00')}</span>
-            </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px;">
-              ${selectedNightCards
-                .map(
-                  (c) => `
-                  <div style="display: flex; align-items: flex-start; gap: 7px; font-size: 11px; padding: 4px 0; border-bottom: 1px solid #f1f5f9;">
-                    <span style="display: inline-block; width: 13px; height: 13px; border: 1.5px solid #334155; border-radius: 3px; margin-top: 2px; flex-shrink: 0;"></span>
-                    <div>
-                      <div style="font-weight: 700; color: #0f172a;">
-                        ${escapeHtml(c.defaultTime)} • ${escapeHtml(c.title)} <span style="font-weight: 500; color: #64748b;">(${c.durationMins}m)</span>
+      const nightPlanSectionHtml =
+        cfg.includeNightPlan && selectedNightCards.length > 0
+          ? `
+            <div class="avoid-break mb-5">
+              ${editorialHeader('I. Tonight’s Night Watch Wind-Down Checklist', `Target Sleep: ${escapeHtml(state.settings.sleepTime || '22:00')}`)}
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px;">
+                ${selectedNightCards
+                  .map(
+                    (c) => `
+                    <div class="avoid-break" style="display: flex; align-items: flex-start; gap: 7px; font-size: 10.5px; padding: 4px 0; border-bottom: 1px solid #e2e8f0;">
+                      <span style="display: inline-block; width: 12px; height: 12px; border: 1.25px solid #1e293b; border-radius: 2px; margin-top: 2px; flex-shrink: 0; background: #ffffff;"></span>
+                      <div>
+                        <div style="font-weight: 700; color: #0f172a;">
+                          ${escapeHtml(c.defaultTime)} • ${escapeHtml(c.title)} <span style="font-weight: 500; color: #475569;">(${c.durationMins}m)</span>
+                        </div>
+                        <div style="font-size: 9.5px; color: #334155; line-height: 1.35;">${escapeHtml(c.summary)} <em>(${escapeHtml(c.scriptureRef)})</em></div>
                       </div>
-                      <div style="font-size: 10px; color: #475569;">${escapeHtml(c.summary)} <em>(${escapeHtml(c.scriptureRef)})</em></div>
                     </div>
-                  </div>
-                `
-                )
-                .join('')}
+                  `
+                  )
+                  .join('')}
+              </div>
             </div>
-          </div>
-        `
-        : '';
+          `
+          : '';
 
-      // 2. Prayer Sanctuary & Intercession Section
+      // 2. Prayer Sanctuary & Intercession Section (with customizable note lines per prayer card!)
       const activeIntercessions = (state.prayerCards || []).filter((c) => !c.isAnswered && c.onActiveBoard);
       const selectedJesusThemes = (cfg.selectedJesusThemeIds || [])
         .map((id) => JESUS_PRAYER_THEMES.find((t) => t.id === id))
         .filter(Boolean);
+      const prayerNoteLines = Number(cfg.prayerNoteLines ?? 1);
 
       let guidedPrayerHtml = '';
       if (cfg.guidedPrayerMethod === 'PRAY') {
         guidedPrayerHtml = `
-          <div class="avoid-break" style="margin-top: 8px; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc;">
-            <div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-bottom: 4px;">
+          <div class="avoid-break" style="margin-top: 8px; padding: 7px 10px; border: 1px solid #64748b; border-radius: 4px; background: #ffffff;">
+            <div style="font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: #0f172a; margin-bottom: 4px;">
               Guided P.R.A.Y. Sanctuary Flow (Lectio 365 Method)
             </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 10px; color: #334155;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; font-size: 9.5px; color: #1e293b;">
               <div><strong>[ ] P — Pause (Ps 46:10):</strong> Slow nasal breaths; be still before the Father.</div>
               <div><strong>[ ] R — Rejoice (Matt 6:9):</strong> Hallow His name & thank Him for 2 mercies today.</div>
               <div><strong>[ ] A — Ask (Matt 6:11):</strong> Intercede for family, Safety Team & daily bread.</div>
@@ -2772,11 +3370,11 @@
         `;
       } else if (cfg.guidedPrayerMethod === 'LORDS_PRAYER') {
         guidedPrayerHtml = `
-          <div class="avoid-break" style="margin-top: 8px; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc;">
-            <div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-bottom: 4px;">
+          <div class="avoid-break" style="margin-top: 8px; padding: 7px 10px; border: 1px solid #64748b; border-radius: 4px; background: #ffffff;">
+            <div style="font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: #0f172a; margin-bottom: 4px;">
               The Lord’s Prayer 6-Petition Evening Walk (Matthew 6:9–13)
             </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 10px; color: #334155;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px 14px; font-size: 9.5px; color: #1e293b;">
               <div>[ ] 1. Father’s Holiness (“Hallowed be Your name”)</div>
               <div>[ ] 2. Kingdom Alignment (“Your Kingdom come”)</div>
               <div>[ ] 3. Tomorrow’s Bread (“Give us our daily bread”)</div>
@@ -2792,7 +3390,7 @@
         selectedJesusThemes.length > 0
           ? `
             <div class="avoid-break" style="margin-top: 8px;">
-              <div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-bottom: 4px;">
+              <div style="font-size: 10.5px; font-weight: 800; text-transform: uppercase; color: #0f172a; margin-bottom: 4px;">
                 Jesus’s Prayer Teachings (${escapeHtml(cfg.bibleVersion)} Study Lens)
               </div>
               <div style="display: grid; grid-template-columns: 1fr; gap: 6px;">
@@ -2805,9 +3403,9 @@
                         ? t.nltLens
                         : `${t.nasbLens} | ${t.nltLens}`;
                     return `
-                      <div style="padding: 6px 8px; border-left: 3px solid #0f172a; background: #f8fafc; font-size: 10px;">
+                      <div class="avoid-break" style="padding: 5px 8px; border: 1px solid #94a3b8; border-left: 2.5px solid #0f172a; background: #ffffff; font-size: 9.5px;">
                         <div style="font-weight: 700; color: #0f172a;">${escapeHtml(t.theme)} (${escapeHtml(t.reference)})</div>
-                        <div style="color: #334155; margin-top: 2px;">${escapeHtml(lensText)}</div>
+                        <div style="color: #334155; margin-top: 1.5px; line-height: 1.35;">${escapeHtml(lensText)}</div>
                         <div style="font-style: italic; color: #0f172a; margin-top: 2px;">Prompt: “${escapeHtml(t.samplePrayer)}”</div>
                       </div>
                     `;
@@ -2822,33 +3420,38 @@
         cfg.includePrayerDeck || cfg.guidedPrayerMethod !== 'NONE' || selectedJesusThemes.length > 0
           ? `
             <div class="avoid-break mb-5">
-              <div style="border-bottom: 2px solid #0f172a; padding-bottom: 4px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: baseline;">
-                <h2 style="font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: #0f172a;">
-                  II. Evening Prayer Sanctuary & Intercession Watch
-                </h2>
-                <span style="font-size: 10px; color: #475569;">Philippians 4:6–7 • Psalm 141:2</span>
-              </div>
+              ${editorialHeader('II. Evening Prayer Sanctuary & Intercession Watch', 'Philippians 4:6–7 • Psalm 141:2')}
 
               ${
                 cfg.includePrayerDeck
                   ? `
                     <div style="margin-bottom: 6px;">
-                      <div style="font-size: 11px; font-weight: 700; color: #0f172a; margin-bottom: 4px;">
-                        Active Intercession Board (Check off & jot tonight’s specific praise or burden):
+                      <div style="font-size: 10px; font-weight: 700; color: #334155; margin-bottom: 4px;">
+                        Active Intercession Board (Check off & write specific praises or requests below each card):
                       </div>
-                      ${activeIntercessions
-                        .map(
-                          (p) => `
-                          <div style="display: flex; align-items: baseline; gap: 8px; font-size: 11px; padding: 5px 0; border-bottom: 1px dashed #cbd5e1;">
-                            <span style="display: inline-block; width: 12px; height: 12px; border: 1.5px solid #334155; border-radius: 3px; flex-shrink: 0;"></span>
-                            <div style="min-width: 190px; font-weight: 700; color: #0f172a;">
-                              ${escapeHtml(p.title)} <span style="font-weight: 500; font-size: 9px; color: #64748b;">(${escapeHtml(p.scriptureTag || '')})</span>
+                      <div class="space-y-1.5">
+                        ${activeIntercessions
+                          .map(
+                            (p) => `
+                            <div class="avoid-break" style="padding: 4px 0;">
+                              <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 10.5px;">
+                                <div style="display: flex; align-items: baseline; gap: 7px;">
+                                  <span style="display: inline-block; width: 11px; height: 11px; border: 1.25px solid #1e293b; border-radius: 2px; flex-shrink: 0;"></span>
+                                  <span style="font-weight: 700; color: #0f172a;">${escapeHtml(p.title)}</span>
+                                  <span style="font-size: 9px; color: #475569; font-family: monospace;">(${escapeHtml(p.scriptureTag || '')})</span>
+                                </div>
+                                <span style="font-size: 9px; color: #64748b;">${escapeHtml(p.category || '')}</span>
+                              </div>
+                              ${
+                                prayerNoteLines > 0
+                                  ? `<div style="margin-left: 18px;">${renderRuledLinesHtml(prayerNoteLines, lineStyle, Math.max(18, lh - 3))}</div>`
+                                  : ''
+                              }
                             </div>
-                            <div style="flex: 1; font-size: 10px; color: #64748b;">Note: ________________________________________________</div>
-                          </div>
-                        `
-                        )
-                        .join('')}
+                          `
+                          )
+                          .join('')}
+                      </div>
                     </div>
                   `
                   : ''
@@ -2859,62 +3462,62 @@
           `
           : '';
 
-      // 3. Captain's Log Journaling Prompts (All selected modes rendered with authentic multi-step structure + ruled lines)
-      const journalModes = cfg.includeCaptainsLog ? cfg.selectedJournalModes || ['baylor_offload', 'examen'] : [];
+      // 3. Captain's Log Journaling Prompts (INK-SAVER HEADERS + GRANULAR SLIDER LINE COUNTS)
+      const journalModes = cfg.includeCaptainsLog ? cfg.selectedJournalModes || ['closure_321'] : [];
       const journalBlocksHtml = journalModes
         .map((mId) => {
           if (mId === 'baylor_offload') {
+            const taskRows = Math.max(3, Number(cfg.baylorTaskRows) || 8);
+            const anchorLines = Math.max(1, Number(cfg.baylorAnchorLines) || 3);
+            const rowsArr = Array.from({ length: taskRows }, (_, idx) => idx + 1);
             return `
               <div class="avoid-break mb-5">
-                <div style="background: #0f172a; color: #ffffff; padding: 5px 10px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;">
-                  <span style="font-size: 11px; font-weight: 700; text-transform: uppercase;">Captain’s Log • Baylor 5-Minute Cognitive Offload</span>
-                  <span style="font-size: 9px; opacity: 0.85;">Closes Open Working-Memory Loops Before Sleep</span>
-                </div>
-                <p style="font-size: 10px; color: #334155; margin: 5px 0;">
-                  Write down every unfinished task or open loop for tomorrow so your brain stops rehearsing them overnight:
+                ${editorialHeader('Captain’s Log • Baylor 5-Minute Cognitive Offload', 'Closes Working-Memory Loops Before Sleep')}
+                <p style="font-size: 9.5px; color: #334155; margin: 4px 0 6px 0;">
+                  Write down concrete tasks or open loops for tomorrow so your hippocampus stops rehearsing them overnight:
                 </p>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; margin-bottom: 8px;">
-                  ${[1, 2, 3, 4, 5, 6, 7, 8]
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px 18px; margin-bottom: 10px;">
+                  ${rowsArr
                     .map(
                       (n) => `
-                      <div style="display: flex; align-items: center; gap: 6px; height: 24px; border-bottom: 1px solid #cbd5e1; font-size: 10px; color: #0f172a;">
+                      <div style="display: flex; align-items: flex-end; gap: 6px; height: ${lh}px; border-bottom: 1px solid #94a3b8; padding-bottom: 2px; font-size: 10px; color: #0f172a;">
                         <span style="font-weight: 700; font-family: monospace;">${n}.</span>
                         <span style="flex: 1;"></span>
-                        <span style="font-size: 9px; color: #64748b;">[ ] Tomorrow 24h</span>
+                        <span style="font-size: 8.5px; color: #475569;">[ ] 24h Watch</span>
                       </div>
                     `
                     )
                     .join('')}
                 </div>
-                <div style="padding: 6px 10px; border: 1.5px solid #0f172a; border-radius: 5px; font-size: 10px; font-weight: 700; color: #0f172a;">
-                  Tomorrow’s #1 First-Thing Anchor Task: ____________________________________________________________________
+                <div class="avoid-break" style="margin-top: 6px;">
+                  <div style="font-size: 10.5px; font-weight: 700; color: #0f172a;">
+                    Tomorrow’s #1 First-Thing Anchor Task & Execution Notes (${anchorLines} lines):
+                  </div>
+                  ${renderRuledLinesHtml(anchorLines, lineStyle, lh)}
                 </div>
               </div>
             `;
           }
 
           if (mId === 'examen') {
-            const perStepLines = Math.max(3, Math.round(lineCount / 2));
+            const stepLines = Math.max(1, Number(cfg.examenStepLines) || 4);
             const examenSteps = [
-              { title: '1. Gratitude (Psalm 103:2)', q: 'Where did I experience God’s kindness, provision, or a small gift today?' },
-              { title: '2. Petition for Light (Psalm 139:23)', q: 'Ask the Holy Spirit for honest, grace-filled clarity as I review the last 24 hours:' },
-              { title: '3. Review Consolation & Desolation (Lamentations 3:40)', q: 'When did my soul feel at peace and aligned with God today? When did I feel hurried, reactive, or drained?' },
-              { title: '4. Forgiveness & Repair (1 John 1:9)', q: 'What impatience, distraction, or shortcoming do I confess and release into Christ’s mercy tonight?' },
-              { title: '5. Grace for Tomorrow (Philippians 3:13–14)', q: 'Where do I most need Jesus’s presence and wisdom in tomorrow’s schedule?' }
+              { title: 'Step 1 • Gratitude (Psalm 103:2)', q: 'Where did I experience God’s kindness, provision, or a quiet gift today?' },
+              { title: 'Step 2 • Petition for Light (Psalm 139:23–24)', q: 'Ask the Holy Spirit for honest, grace-filled sight as I review the last 24 hours:' },
+              { title: 'Step 3 • Review Consolation & Desolation (Lamentations 3:40)', q: 'When did my soul feel peaceful and aligned with God today? When did I feel hurried, reactive, or drained?' },
+              { title: 'Step 4 • Forgiveness & Gospel Repair (1 John 1:9)', q: 'What impatience, distraction, or shortcoming do I confess and release into Christ’s mercy tonight?' },
+              { title: 'Step 5 • Grace for Tomorrow (Philippians 3:13–14)', q: 'Where do I most need Jesus’s wisdom and presence in tomorrow’s schedule?' }
             ];
             return `
               <div class="mb-5">
-                <div style="background: #0f172a; color: #ffffff; padding: 5px 10px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                  <span style="font-size: 11px; font-weight: 700; text-transform: uppercase;">Captain’s Log • The 5-Step Biblical Examen</span>
-                  <span style="font-size: 9px; opacity: 0.85;">All 5 Spiritual Movements</span>
-                </div>
+                ${editorialHeader('Captain’s Log • The 5-Step Biblical Examen', `${stepLines} Lines per Movement`)}
                 ${examenSteps
                   .map(
                     (st) => `
                     <div class="avoid-break" style="margin-bottom: 8px;">
-                      <div style="font-size: 11px; font-weight: 700; color: #0f172a;">${st.title}</div>
-                      <div style="font-size: 10px; color: #475569; font-style: italic;">${st.q}</div>
-                      ${renderRuledLinesHtml(perStepLines, lineStyle)}
+                      <div style="font-size: 10.5px; font-weight: 700; color: #0f172a;">${st.title}</div>
+                      <div style="font-size: 9.5px; color: #334155; font-style: italic;">${st.q}</div>
+                      ${renderRuledLinesHtml(stepLines, lineStyle, lh)}
                     </div>
                   `
                   )
@@ -2924,78 +3527,106 @@
           }
 
           if (mId === 'pennebaker') {
+            const priLines = Math.max(2, Number(cfg.deepPrimaryLines) || 8);
+            const secLines = Math.max(2, Number(cfg.deepSecondaryLines) || 5);
             return `
-              <div class="avoid-break mb-5">
-                <div style="background: #0f172a; color: #ffffff; padding: 5px 10px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                  <span style="font-size: 11px; font-weight: 700; text-transform: uppercase;">Captain’s Log • Pennebaker Deep Emotional Unpacking</span>
-                  <span style="font-size: 9px; opacity: 0.85;">Tension Scale:  1  2  3  4  5  6  7  8  9  10</span>
+              <div class="mb-5">
+                ${editorialHeader('Captain’s Log • Pennebaker Expressive Emotional Unpacking', 'Tension Level: 1  2  3  4  5  6  7  8  9  10')}
+                <div class="avoid-break" style="margin-bottom: 8px;">
+                  <div style="font-size: 10.5px; font-weight: 700; color: #0f172a;">
+                    1. Unfiltered Stream — What unspoken frustration, weight, or emotion from today needs to be named honestly? (${priLines} lines):
+                  </div>
+                  ${renderRuledLinesHtml(priLines, lineStyle, lh)}
                 </div>
-                <div style="font-size: 10px; font-weight: 700; color: #0f172a;">
-                  1. Unfiltered Stream (What unspoken frustration, weight, or emotion from today needs to be named honestly?):
+                <div class="avoid-break">
+                  <div style="font-size: 10.5px; font-weight: 700; color: #0f172a;">
+                    2. Prefrontal & Biblical Reframe — Having named it on paper, what truth or promise anchors my heart tonight? (${secLines} lines):
+                  </div>
+                  ${renderRuledLinesHtml(secLines, lineStyle, lh)}
                 </div>
-                ${renderRuledLinesHtml(lineCount, lineStyle)}
-                <div style="font-size: 10px; font-weight: 700; color: #0f172a; margin-top: 6px;">
-                  2. Biblical & Prefrontal Reframe (Having named it, what truth or perspective anchors my heart tonight?):
-                </div>
-                ${renderRuledLinesHtml(Math.max(4, Math.round(lineCount / 2)), lineStyle)}
               </div>
             `;
           }
 
           if (mId === 'narrative') {
+            const priLines = Math.max(2, Number(cfg.deepPrimaryLines) || 8);
+            const secLines = Math.max(2, Number(cfg.deepSecondaryLines) || 5);
             return `
-              <div class="avoid-break mb-5">
-                <div style="background: #0f172a; color: #ffffff; padding: 5px 10px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                  <span style="font-size: 11px; font-weight: 700; text-transform: uppercase;">Captain’s Log • Story-Based Narrative Gratitude</span>
-                  <span style="font-size: 9px; opacity: 0.85;">Deep Anterior Cingulate & Serotonin Encoding</span>
-                </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 6px; font-size: 10px;">
-                  <div style="padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
-                    <strong>The Scene / Where I Was:</strong><br/><br/>
+              <div class="mb-5">
+                ${editorialHeader('Captain’s Log • Story-Based Narrative Gratitude', 'Deep Anterior Cingulate & Serotonin Encoding')}
+                <div class="avoid-break" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px; font-size: 9.5px;">
+                  <div style="padding: 5px 8px; border: 1px solid #94a3b8; border-radius: 4px;">
+                    <strong>1. The Scene (Where I Was):</strong>
+                    <div style="height: 20px; border-bottom: 1px solid #cbd5e1;"></div>
                   </div>
-                  <div style="padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 4px;">
-                    <strong>Who Was Involved:</strong><br/><br/>
+                  <div style="padding: 5px 8px; border: 1px solid #94a3b8; border-radius: 4px;">
+                    <strong>Who Was Involved:</strong>
+                    <div style="height: 20px; border-bottom: 1px solid #cbd5e1;"></div>
                   </div>
                 </div>
-                <div style="font-size: 10px; font-weight: 700; color: #0f172a;">
-                  Replay ONE Meaningful Moment from Today in Vivid Detail & Why It Mattered:
+                <div class="avoid-break" style="margin-bottom: 8px;">
+                  <div style="font-size: 10.5px; font-weight: 700; color: #0f172a;">
+                    2. Replay ONE Meaningful Moment from Today in Vivid Sensory Detail (${priLines} lines):
+                  </div>
+                  ${renderRuledLinesHtml(priLines, lineStyle, lh)}
                 </div>
-                ${renderRuledLinesHtml(lineCount, lineStyle)}
+                <div class="avoid-break">
+                  <div style="font-size: 10.5px; font-weight: 700; color: #0f172a;">
+                    3. Heart Takeaway — Why did this specific gift from God matter to my soul today? (${secLines} lines):
+                  </div>
+                  ${renderRuledLinesHtml(secLines, lineStyle, lh)}
+                </div>
               </div>
             `;
           }
 
           if (mId === 'closure_321') {
+            const winsLines = Math.max(3, Number(cfg.winsLines) || 6);
+            const lessonsLines = Math.max(2, Number(cfg.lessonsLines) || 4);
+            const intentionLines = Math.max(1, Number(cfg.intentionLines) || 3);
             return `
-              <div class="avoid-break mb-5">
-                <div style="background: #0f172a; color: #ffffff; padding: 5px 10px; border-radius: 4px; margin-bottom: 6px;">
-                  <span style="font-size: 11px; font-weight: 700; text-transform: uppercase;">Captain’s Log • The 3-2-1 Evening Closure</span>
+              <div class="mb-5">
+                ${editorialHeader('Captain’s Log • The 3-2-1 Evening Closure', `${winsLines} + ${lessonsLines} + ${intentionLines} Writing Lines`)}
+                <div class="avoid-break" style="margin-bottom: 10px;">
+                  <div style="font-size: 10.5px; font-weight: 700; color: #0f172a;">
+                    3 Wins, Gifts, or Completed Anchors from Today (${winsLines} lines — ${Math.floor(winsLines / 3)}–${Math.ceil(winsLines / 3)} lines per win):
+                  </div>
+                  ${renderNumberedItemBlocksHtml(3, winsLines, lineStyle, lh)}
                 </div>
-                <div style="font-size: 10px; font-weight: 700; color: #0f172a;">3 Wins, Gifts, or Completed Anchors from Today:</div>
-                ${renderRuledLinesHtml(3, lineStyle)}
-                <div style="font-size: 10px; font-weight: 700; color: #0f172a; margin-top: 6px;">2 Releases, Lessons, or Adjustments:</div>
-                ${renderRuledLinesHtml(3, lineStyle)}
-                <div style="font-size: 10px; font-weight: 700; color: #0f172a; margin-top: 6px;">1 Primary Intention for Tomorrow Morning:</div>
-                ${renderRuledLinesHtml(2, lineStyle)}
+                <div class="avoid-break" style="margin-bottom: 10px;">
+                  <div style="font-size: 10.5px; font-weight: 700; color: #0f172a;">
+                    2 Releases, Lessons, or Adjustments from Today (${lessonsLines} lines — ${Math.floor(lessonsLines / 2)}–${Math.ceil(lessonsLines / 2)} lines each):
+                  </div>
+                  ${renderNumberedItemBlocksHtml(2, lessonsLines, lineStyle, lh)}
+                </div>
+                <div class="avoid-break">
+                  <div style="font-size: 10.5px; font-weight: 700; color: #0f172a;">
+                    1 Primary Intention & Mindset for Tomorrow Morning (${intentionLines} lines):
+                  </div>
+                  ${renderNumberedItemBlocksHtml(1, intentionLines, lineStyle, lh)}
+                </div>
               </div>
             `;
           }
 
           if (mId === 'psalm4') {
+            const priLines = Math.max(2, Number(cfg.deepPrimaryLines) || 8);
+            const secLines = Math.max(2, Number(cfg.deepSecondaryLines) || 5);
             return `
-              <div class="avoid-break mb-5">
-                <div style="background: #0f172a; color: #ffffff; padding: 5px 10px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                  <span style="font-size: 11px; font-weight: 700; text-transform: uppercase;">Captain’s Log • Psalm 4:8 Night Watch Surrender</span>
-                  <span style="font-size: 9px; opacity: 0.85;">“In peace I will both lie down and sleep...”</span>
+              <div class="mb-5">
+                ${editorialHeader('Captain’s Log • Psalm 4:8 Night Watch Surrender', '“In peace I will both lie down and sleep...”')}
+                <div class="avoid-break" style="margin-bottom: 8px;">
+                  <div style="font-size: 10.5px; font-weight: 700; color: #0f172a;">
+                    1. Burdens, Family Needs & Unfinished Work I Am Releasing from My Shoulders Tonight (${priLines} lines):
+                  </div>
+                  ${renderRuledLinesHtml(priLines, lineStyle, lh)}
                 </div>
-                <div style="font-size: 10px; font-weight: 700; color: #0f172a;">
-                  Burdens, Family Needs & Unfinished Work I Am Releasing from My Shoulders Tonight:
+                <div class="avoid-break">
+                  <div style="font-size: 10.5px; font-weight: 700; color: #0f172a;">
+                    2. Written Prayer Handing the Night Watch Over to the Lord (Psalm 4:8 • Psalm 121:3–4) (${secLines} lines):
+                  </div>
+                  ${renderRuledLinesHtml(secLines, lineStyle, lh)}
                 </div>
-                ${renderRuledLinesHtml(Math.max(4, Math.round(lineCount * 0.6)), lineStyle)}
-                <div style="font-size: 10px; font-weight: 700; color: #0f172a; margin-top: 6px;">
-                  Written Prayer Handing the Night Watch Over to the Lord (Psalm 4:8 • Psalm 121:3–4):
-                </div>
-                ${renderRuledLinesHtml(Math.max(4, Math.round(lineCount * 0.6)), lineStyle)}
               </div>
             `;
           }
@@ -3004,42 +3635,42 @@
         .join('');
 
       const headerBannerHtml = `
-        <div style="border-bottom: 2.5px solid #0f172a; padding-bottom: 8px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: flex-end;">
+        <div style="border-bottom: 2px solid #0f172a; padding-bottom: 6px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: flex-end; background: #ffffff;">
           <div>
-            <div style="font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.12em; color: #475569;">
-              Lighthouse Analog Watchtower • 3-Hole Binder Edition (Psalm 119:105)
+            <div style="font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.14em; color: #475569;">
+              Lighthouse Analog Watchtower • Ink-Saver 3-Hole Binder Edition (Psalm 119:105)
             </div>
-            <h1 style="font-size: 18px; font-weight: 800; color: #0f172a; margin: 2px 0 0 0;">
+            <h1 style="font-size: 16px; font-weight: 800; color: #0f172a; margin: 2px 0 0 0;">
               Evening Wind-Down, Prayer Sanctuary & Captain’s Log
             </h1>
           </div>
-          <div style="text-align: right; font-size: 10px; color: #0f172a; font-family: monospace;">
+          <div style="text-align: right; font-size: 9.5px; color: #0f172a; font-family: monospace;">
             <div><strong>Date:</strong> ${escapeHtml(cfg.sheetDate || new Date().toISOString().slice(0, 10))}</div>
             <div><strong>Keeper:</strong> ${escapeHtml(state.settings.userName || 'Dan')}</div>
           </div>
         </div>
       `;
 
+      // LAYOUT 1: 2-PAGE BINDER SPREAD (Page 1 = Night Watch + Prayer ONLY; Page 2 = Captain's Log ONLY — ZERO DUPLICATION!)
       if (cfg.pageTarget === '2page') {
         return `
-          <div id="printable-binder-document">
-            <!-- PAGE 1: FRONT (NIGHT WATCH PLAN + PRAYER SANCTUARY) -->
-            <div class="binder-paper-sheet" style="padding-top: 0.45in; padding-bottom: 0.45in; ${padLeft}">
+          <div id="printable-binder-document" style="--print-line-height: ${lh}px;">
+            <!-- PAGE 1: FRONT (NIGHT WATCH PLAN + PRAYER SANCTUARY ONLY) -->
+            <div class="binder-paper-sheet" style="padding-top: 0.4in; padding-bottom: 0.4in; ${padLeft}">
               ${cfg.threeHoleMargin ? renderHolePunchRail('left') : ''}
               ${headerBannerHtml}
               ${nightPlanSectionHtml}
               ${prayerSectionHtml}
-              ${journalModes.length === 1 ? journalBlocksHtml : ''}
             </div>
 
-            <!-- PAGE 2: BACK (CAPTAIN'S LOG DEEP WRITING SPREAD) -->
-            <div class="binder-paper-sheet binder-page-break mt-6" style="padding-top: 0.45in; padding-bottom: 0.45in; ${padPage2}">
+            <!-- PAGE 2: BACK (DEDICATED CAPTAIN'S LOG WRITING SPREAD ONLY) -->
+            <div class="binder-paper-sheet binder-page-break mt-6" style="padding-top: 0.4in; padding-bottom: 0.4in; ${padPage2}">
               ${cfg.threeHoleMargin ? renderHolePunchRail(cfg.duplexMirrorMargin ? 'right' : 'left') : ''}
-              <div style="border-bottom: 2px solid #0f172a; padding-bottom: 6px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-size: 12px; font-weight: 800; text-transform: uppercase; color: #0f172a;">
+              <div style="border-bottom: 1.5px solid #0f172a; padding-bottom: 5px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #0f172a;">
                   III. Captain’s Log — Screen-Free Evening Writing Spread (Page 2)
                 </span>
-                <span style="font-size: 10px; font-family: monospace; color: #475569;">Date: ${escapeHtml(cfg.sheetDate)}</span>
+                <span style="font-size: 9.5px; font-family: monospace; color: #475569;">Date: ${escapeHtml(cfg.sheetDate)} • Keeper: ${escapeHtml(state.settings.userName || 'Dan')}</span>
               </div>
               ${journalBlocksHtml}
             </div>
@@ -3047,10 +3678,23 @@
         `;
       }
 
-      // 1-Page Condensed Sheet
+      // LAYOUT 2: CAPTAIN'S LOG ONLY (SINGLE FULL SHEET OF WRITING LINES)
+      if (cfg.pageTarget === 'log_only') {
+        return `
+          <div id="printable-binder-document" style="--print-line-height: ${lh}px;">
+            <div class="binder-paper-sheet" style="padding-top: 0.4in; padding-bottom: 0.4in; ${padLeft}">
+              ${cfg.threeHoleMargin ? renderHolePunchRail('left') : ''}
+              ${headerBannerHtml}
+              ${journalBlocksHtml}
+            </div>
+          </div>
+        `;
+      }
+
+      // LAYOUT 3: 1-PAGE ALL-IN-ONE SHEET (RENDERED ONCE)
       return `
-        <div id="printable-binder-document">
-          <div class="binder-paper-sheet" style="padding-top: 0.4in; padding-bottom: 0.4in; ${padLeft}">
+        <div id="printable-binder-document" style="--print-line-height: ${lh}px;">
+          <div class="binder-paper-sheet" style="padding-top: 0.38in; padding-bottom: 0.38in; ${padLeft}">
             ${cfg.threeHoleMargin ? renderHolePunchRail('left') : ''}
             ${headerBannerHtml}
             ${nightPlanSectionHtml}
@@ -3061,111 +3705,270 @@
       `;
     }
 
+    // Helper for rendering a clean UX Slider Row with - / + steppers & live badge
+    function renderSliderControl({ id, label, sublabel, key, min, max, val, unit = 'lines' }) {
+      const numVal = Number(val);
+      return `
+        <div class="p-2.5 rounded-xl lh-surface space-y-1.5">
+          <div class="flex items-center justify-between gap-2">
+            <div>
+              <span class="text-xs font-semibold lh-text-main block">${escapeHtml(label)}</span>
+              ${sublabel ? `<span class="text-[10px] lh-text-sec block">${escapeHtml(sublabel)}</span>` : ''}
+            </div>
+            <div class="flex items-center gap-1 shrink-0">
+              <button type="button" onclick="window.Lighthouse.stepPdfSlider('${key}', -1, ${min}, ${max})"
+                class="w-6 h-6 rounded-lg lh-elevated lh-text-main text-xs font-bold flex items-center justify-center hover:opacity-80">−</button>
+              <span id="slider-badge-${id}" class="min-w-[54px] text-center text-xs font-mono-code font-bold px-2 py-0.5 rounded-lg lh-badge">${numVal} ${unit}</span>
+              <button type="button" onclick="window.Lighthouse.stepPdfSlider('${key}', 1, ${min}, ${max})"
+                class="w-6 h-6 rounded-lg lh-elevated lh-text-main text-xs font-bold flex items-center justify-center hover:opacity-80">+</button>
+            </div>
+          </div>
+          <input id="slider-input-${id}" type="range" min="${min}" max="${max}" value="${numVal}"
+            oninput="window.Lighthouse.liveSlidePdfConfig('${key}', '${id}', this.value, '${unit}')"
+            class="w-full cursor-pointer" />
+        </div>
+      `;
+    }
+
     function renderPdfBuilderModalContent() {
       const box = document.getElementById('pdf-builder-body');
       if (!box) return;
-      const cfg = state.pdfConfig || INITIAL_STATE.pdfConfig;
+      const cfg = { ...INITIAL_STATE.pdfConfig, ...(state.pdfConfig || {}) };
+      const modes = cfg.selectedJournalModes || ['closure_321'];
+      const mobPane = cfg.mobilePane || 'controls';
+
+      const mobBtnControls = document.getElementById('pdf-mob-tab-controls');
+      const mobBtnPreview = document.getElementById('pdf-mob-tab-preview');
+      if (mobBtnControls && mobBtnPreview) {
+        mobBtnControls.className = `flex-1 py-2 rounded-xl text-xs font-bold ${mobPane === 'controls' ? 'lh-btn-primary' : 'lh-elevated lh-text-sec'}`;
+        mobBtnPreview.className = `flex-1 py-2 rounded-xl text-xs font-bold ${mobPane === 'preview' ? 'lh-btn-primary' : 'lh-elevated lh-text-sec'}`;
+      }
 
       const journalCatalog = [
-        { id: 'baylor_offload', label: '1. Baylor 5-Min Cognitive Offload (Numbered Task Table)' },
-        { id: 'examen', label: '2. 5-Step Biblical Examen (All 5 Movements + Ruled Lines)' },
-        { id: 'pennebaker', label: '3. Pennebaker Deep Emotional Unpacking' },
-        { id: 'narrative', label: '4. Story-Based Narrative Gratitude' },
-        { id: 'closure_321', label: '5. 3-2-1 Evening Closure' },
-        { id: 'psalm4', label: '6. Psalm 4:8 Night Watch Surrender' }
+        { id: 'closure_321', label: '3-2-1 Evening Closure (Wins, Lessons, #1 Intention)' },
+        { id: 'baylor_offload', label: 'Baylor 5-Min Cognitive Offload (Numbered Task Grid)' },
+        { id: 'examen', label: '5-Step Biblical Examen (All 5 Spiritual Movements)' },
+        { id: 'psalm4', label: 'Psalm 4:8 Night Watch Surrender' },
+        { id: 'pennebaker', label: 'Pennebaker Deep Emotional Unpacking' },
+        { id: 'narrative', label: 'Story-Based Narrative Gratitude' }
       ];
 
       box.innerHTML = `
-        <!-- LEFT COLUMN: CUSTOMIZATION CONTROLS -->
-        <div class="lg:col-span-5 space-y-4 overflow-y-auto pr-1">
-          <!-- 1. Binder & Page Layout -->
-          <div class="p-4 rounded-2xl lh-elevated space-y-3">
-            <h4 class="font-bold text-xs uppercase tracking-wider" style="color: var(--accent-primary);">1. 3-Hole Binder & Page Layout</h4>
-
-            <div class="grid grid-cols-2 gap-2">
-              <button onclick="window.Lighthouse.updatePdfConfig('pageTarget', '1page')"
-                class="py-2 px-3 rounded-xl text-xs font-semibold ${cfg.pageTarget === '1page' ? 'lh-btn-primary' : 'lh-surface lh-text-sec'}">
-                1-Page Condensed
-              </button>
+        <!-- LEFT COLUMN: SLIDERS & CUSTOMIZATION CONTROLS -->
+        <div class="${mobPane === 'preview' ? 'hidden lg:block' : 'block'} lg:col-span-5 p-4 sm:p-5 space-y-4 overflow-y-auto max-h-[82vh] border-r lh-border">
+          <!-- 1. Page Mode & 3-Hole Binder Setup -->
+          <div class="p-3.5 rounded-2xl lh-elevated space-y-3">
+            <h4 class="font-bold text-xs uppercase tracking-wider" style="color: var(--accent-primary);">1. Page Spread & 3-Hole Binder Setup</h4>
+            <div class="grid grid-cols-3 gap-1.5">
               <button onclick="window.Lighthouse.updatePdfConfig('pageTarget', '2page')"
-                class="py-2 px-3 rounded-xl text-xs font-semibold ${cfg.pageTarget === '2page' ? 'lh-btn-primary' : 'lh-surface lh-text-sec'}">
-                2-Page Spread (Front/Back)
+                class="py-2 px-2 rounded-xl text-[11px] font-semibold ${cfg.pageTarget === '2page' ? 'lh-btn-primary' : 'lh-surface lh-text-sec'}">
+                2-Page Spread
+              </button>
+              <button onclick="window.Lighthouse.updatePdfConfig('pageTarget', '1page')"
+                class="py-2 px-2 rounded-xl text-[11px] font-semibold ${cfg.pageTarget === '1page' ? 'lh-btn-primary' : 'lh-surface lh-text-sec'}">
+                1-Page All-in-One
+              </button>
+              <button onclick="window.Lighthouse.updatePdfConfig('pageTarget', 'log_only')"
+                class="py-2 px-2 rounded-xl text-[11px] font-semibold ${cfg.pageTarget === 'log_only' ? 'lh-btn-primary' : 'lh-surface lh-text-sec'}">
+                Log Only (1p)
               </button>
             </div>
 
-            <label class="flex items-center justify-between p-2.5 rounded-xl lh-surface cursor-pointer">
-              <div>
-                <span class="text-xs font-semibold lh-text-main block">3-Hole Punch Binder Margin (0.85in)</span>
-                <span class="text-[10px] lh-text-sec">Adds US Letter 3-ring hole punch guide circles</span>
+            <div class="grid grid-cols-2 gap-2">
+              <label class="flex items-center justify-between p-2 rounded-xl lh-surface cursor-pointer text-xs">
+                <span class="font-medium lh-text-main">3-Hole Margin</span>
+                <input type="checkbox" ${cfg.threeHoleMargin ? 'checked' : ''}
+                  onchange="window.Lighthouse.updatePdfConfig('threeHoleMargin', this.checked)" class="w-4 h-4" />
+              </label>
+              <label class="flex items-center justify-between p-2 rounded-xl lh-surface cursor-pointer text-xs">
+                <span class="font-medium lh-text-main">Duplex Mirror P2</span>
+                <input type="checkbox" ${cfg.duplexMirrorMargin ? 'checked' : ''}
+                  onchange="window.Lighthouse.updatePdfConfig('duplexMirrorMargin', this.checked)" class="w-4 h-4" />
+              </label>
+            </div>
+          </div>
+
+          <!-- 2. GRANULAR WRITING LINE SLIDERS (LIVE REAL-TIME CONTROL) -->
+          <div class="p-3.5 rounded-2xl lh-elevated space-y-3">
+            <div class="flex items-center justify-between flex-wrap gap-1">
+              <h4 class="font-bold text-xs uppercase tracking-wider" style="color: var(--accent-primary);">2. Writing Line Sliders (Live Preview)</h4>
+              <div class="flex items-center gap-1">
+                <button onclick="window.Lighthouse.applyPdfLinePreset('compact')" class="px-2 py-0.5 rounded-md lh-surface text-[10px] font-semibold lh-text-sec hover:lh-text-main">Compact</button>
+                <button onclick="window.Lighthouse.applyPdfLinePreset('balanced')" class="px-2 py-0.5 rounded-md lh-surface text-[10px] font-semibold lh-text-sec hover:lh-text-main">Balanced</button>
+                <button onclick="window.Lighthouse.applyPdfLinePreset('deep')" class="px-2 py-0.5 rounded-md lh-btn-soft text-[10px] font-semibold">Deep Writing</button>
               </div>
-              <input type="checkbox" ${cfg.threeHoleMargin ? 'checked' : ''}
-                onchange="window.Lighthouse.updatePdfConfig('threeHoleMargin', this.checked)" class="w-4 h-4" />
-            </label>
+            </div>
+
+            ${renderSliderControl({
+              id: 'lineHeightPx',
+              label: 'Line Spacing Height (Rule Width)',
+              sublabel: '18px Compact • 24px College Ruled • 30px Wide Ruled',
+              key: 'lineHeightPx',
+              min: 18,
+              max: 32,
+              val: cfg.lineHeightPx ?? 24,
+              unit: 'px'
+            })}
+
+            ${renderSliderControl({
+              id: 'prayerNoteLines',
+              label: 'Lines Under Each Active Prayer Card',
+              sublabel: 'Blank lines below Regla, Safety Team, etc. (0 = title only)',
+              key: 'prayerNoteLines',
+              min: 0,
+              max: 4,
+              val: cfg.prayerNoteLines ?? 1,
+              unit: 'lines'
+            })}
 
             ${
-              cfg.pageTarget === '2page' && cfg.threeHoleMargin
+              modes.includes('closure_321')
                 ? `
-                  <label class="flex items-center justify-between p-2.5 rounded-xl lh-surface cursor-pointer">
-                    <div>
-                      <span class="text-xs font-semibold lh-text-main block">Mirror Right Margin on Page 2 (Duplex)</span>
-                      <span class="text-[10px] lh-text-sec">Aligns holes when printing double-sided front & back</span>
-                    </div>
-                    <input type="checkbox" ${cfg.duplexMirrorMargin ? 'checked' : ''}
-                      onchange="window.Lighthouse.updatePdfConfig('duplexMirrorMargin', this.checked)" class="w-4 h-4" />
-                  </label>
+                  <div class="pt-1 border-t lh-border space-y-2">
+                    <span class="text-[11px] font-bold lh-text-main block">3-2-1 Evening Closure Line Sliders:</span>
+                    ${renderSliderControl({
+                      id: 'winsLines',
+                      label: '3 Wins / Gifts from Today',
+                      sublabel: 'Divided evenly across Wins #1, #2, and #3 (e.g., 6 = 2 lines per win)',
+                      key: 'winsLines',
+                      min: 3,
+                      max: 15,
+                      val: cfg.winsLines ?? 6,
+                      unit: 'lines'
+                    })}
+                    ${renderSliderControl({
+                      id: 'lessonsLines',
+                      label: '2 Releases / Adjustments',
+                      sublabel: 'Divided across Releases #1 and #2 (e.g., 4 = 2 lines each)',
+                      key: 'lessonsLines',
+                      min: 2,
+                      max: 12,
+                      val: cfg.lessonsLines ?? 4,
+                      unit: 'lines'
+                    })}
+                    ${renderSliderControl({
+                      id: 'intentionLines',
+                      label: '1 Primary Intention for Tomorrow',
+                      sublabel: 'Lines for tomorrow morning’s #1 focus',
+                      key: 'intentionLines',
+                      min: 1,
+                      max: 8,
+                      val: cfg.intentionLines ?? 3,
+                      unit: 'lines'
+                    })}
+                  </div>
+                `
+                : ''
+            }
+
+            ${
+              modes.includes('examen')
+                ? `
+                  <div class="pt-1 border-t lh-border space-y-2">
+                    ${renderSliderControl({
+                      id: 'examenStepLines',
+                      label: '5-Step Biblical Examen (Lines per Step)',
+                      sublabel: 'Applied to each of the 5 Examen movements',
+                      key: 'examenStepLines',
+                      min: 2,
+                      max: 10,
+                      val: cfg.examenStepLines ?? 4,
+                      unit: 'lines'
+                    })}
+                  </div>
+                `
+                : ''
+            }
+
+            ${
+              modes.includes('baylor_offload')
+                ? `
+                  <div class="pt-1 border-t lh-border space-y-2">
+                    ${renderSliderControl({
+                      id: 'baylorTaskRows',
+                      label: 'Baylor Offload Numbered Task Rows',
+                      sublabel: 'Two-column numbered action-item grid',
+                      key: 'baylorTaskRows',
+                      min: 4,
+                      max: 14,
+                      val: cfg.baylorTaskRows ?? 8,
+                      unit: 'rows'
+                    })}
+                    ${renderSliderControl({
+                      id: 'baylorAnchorLines',
+                      label: 'Tomorrow’s #1 Priority Notes Lines',
+                      sublabel: 'Ruled lines below the #1 priority callout',
+                      key: 'baylorAnchorLines',
+                      min: 1,
+                      max: 6,
+                      val: cfg.baylorAnchorLines ?? 3,
+                      unit: 'lines'
+                    })}
+                  </div>
+                `
+                : ''
+            }
+
+            ${
+              modes.some((m) => ['pennebaker', 'narrative', 'psalm4'].includes(m))
+                ? `
+                  <div class="pt-1 border-t lh-border space-y-2">
+                    ${renderSliderControl({
+                      id: 'deepPrimaryLines',
+                      label: 'Primary Prompt Writing Lines',
+                      sublabel: 'Main reflection / story / burdens section',
+                      key: 'deepPrimaryLines',
+                      min: 3,
+                      max: 16,
+                      val: cfg.deepPrimaryLines ?? 8,
+                      unit: 'lines'
+                    })}
+                    ${renderSliderControl({
+                      id: 'deepSecondaryLines',
+                      label: 'Reframe / Written Prayer Lines',
+                      sublabel: 'Closing truth anchor or written prayer section',
+                      key: 'deepSecondaryLines',
+                      min: 2,
+                      max: 12,
+                      val: cfg.deepSecondaryLines ?? 5,
+                      unit: 'lines'
+                    })}
+                  </div>
                 `
                 : ''
             }
 
             <div class="grid grid-cols-2 gap-2 pt-1">
               <div>
-                <label class="text-[11px] font-semibold lh-text-sec block mb-1">Writing Lines per Prompt</label>
-                <select onchange="window.Lighthouse.updatePdfConfig('lineDensity', Number(this.value))" class="w-full px-2.5 py-2 rounded-xl lh-input text-xs">
-                  <option value="6" ${Number(cfg.lineDensity) === 6 ? 'selected' : ''}>Compact (6 lines)</option>
-                  <option value="10" ${Number(cfg.lineDensity) === 10 ? 'selected' : ''}>Standard (10 lines)</option>
-                  <option value="14" ${Number(cfg.lineDensity) === 14 ? 'selected' : ''}>Generous (14 lines)</option>
-                  <option value="20" ${Number(cfg.lineDensity) === 20 ? 'selected' : ''}>Deep Dive (20 lines)</option>
-                </select>
-              </div>
-              <div>
                 <label class="text-[11px] font-semibold lh-text-sec block mb-1">Line Rule Style</label>
-                <select onchange="window.Lighthouse.updatePdfConfig('lineStyle', this.value)" class="w-full px-2.5 py-2 rounded-xl lh-input text-xs">
-                  <option value="ruled" ${cfg.lineStyle === 'ruled' ? 'selected' : ''}>Ruled Lines</option>
-                  <option value="dotted" ${cfg.lineStyle === 'dotted' ? 'selected' : ''}>Dot-Dashed</option>
-                  <option value="boxed" ${cfg.lineStyle === 'boxed' ? 'selected' : ''}>Dot Grid Box</option>
+                <select onchange="window.Lighthouse.updatePdfConfig('lineStyle', this.value)" class="w-full px-2.5 py-1.5 rounded-xl lh-input text-xs">
+                  <option value="ruled" ${cfg.lineStyle === 'ruled' ? 'selected' : ''}>Solid Ruled Lines</option>
+                  <option value="dotted" ${cfg.lineStyle === 'dotted' ? 'selected' : ''}>Dashed Guide Lines</option>
+                  <option value="boxed" ${cfg.lineStyle === 'boxed' ? 'selected' : ''}>Dot-Grid Box</option>
                 </select>
-              </div>
-            </div>
-
-            <div class="grid grid-cols-2 gap-2">
-              <div>
-                <label class="text-[11px] font-semibold lh-text-sec block mb-1">Sheet Date</label>
-                <input type="date" value="${escapeHtml(cfg.sheetDate)}"
-                  onchange="window.Lighthouse.updatePdfConfig('sheetDate', this.value)"
-                  class="w-full px-2.5 py-1.5 rounded-xl lh-input text-xs font-mono-code" />
               </div>
               <div>
                 <label class="text-[11px] font-semibold lh-text-sec block mb-1">Bible Study Lens</label>
-                <select onchange="window.Lighthouse.updatePdfConfig('bibleVersion', this.value)" class="w-full px-2.5 py-2 rounded-xl lh-input text-xs">
-                  <option value="NASB" ${cfg.bibleVersion === 'NASB' ? 'selected' : ''}>NASB (Literal)</option>
-                  <option value="NLT" ${cfg.bibleVersion === 'NLT' ? 'selected' : ''}>NLT (Relational)</option>
+                <select onchange="window.Lighthouse.updatePdfConfig('bibleVersion', this.value)" class="w-full px-2.5 py-1.5 rounded-xl lh-input text-xs">
                   <option value="BOTH" ${cfg.bibleVersion === 'BOTH' ? 'selected' : ''}>Both NASB & NLT</option>
+                  <option value="NASB" ${cfg.bibleVersion === 'NASB' ? 'selected' : ''}>NASB Only</option>
+                  <option value="NLT" ${cfg.bibleVersion === 'NLT' ? 'selected' : ''}>NLT Only</option>
                 </select>
               </div>
             </div>
           </div>
 
-          <!-- 2. Captain's Log Journaling Methods Selector -->
-          <div class="p-4 rounded-2xl lh-elevated space-y-2.5">
+          <!-- 3. Captain's Log Journaling Methods Selector -->
+          <div class="p-3.5 rounded-2xl lh-elevated space-y-2">
             <div class="flex items-center justify-between">
-              <h4 class="font-bold text-xs uppercase tracking-wider" style="color: var(--accent-primary);">2. Captain’s Log Prompts & Lines</h4>
+              <h4 class="font-bold text-xs uppercase tracking-wider" style="color: var(--accent-primary);">3. Captain’s Log Methods to Include</h4>
               <input type="checkbox" ${cfg.includeCaptainsLog ? 'checked' : ''}
                 onchange="window.Lighthouse.updatePdfConfig('includeCaptainsLog', this.checked)" class="w-4 h-4" />
             </div>
             <div class="space-y-1.5">
               ${journalCatalog
                 .map((j) => {
-                  const checked = (cfg.selectedJournalModes || []).includes(j.id);
+                  const checked = modes.includes(j.id);
                   return `
                     <label class="flex items-center gap-2.5 p-2 rounded-xl lh-surface cursor-pointer text-xs">
                       <input type="checkbox" ${checked ? 'checked' : ''}
@@ -3178,72 +3981,42 @@
             </div>
           </div>
 
-          <!-- 3. Prayer Sanctuary & Jesus's Teachings Selector -->
-          <div class="p-4 rounded-2xl lh-elevated space-y-2.5">
-            <h4 class="font-bold text-xs uppercase tracking-wider" style="color: var(--accent-primary);">3. Prayer Board & Method on Printout</h4>
-
+          <!-- 4. Prayer & Night Watch Checklist Toggles -->
+          <div class="p-3.5 rounded-2xl lh-elevated space-y-2.5">
+            <h4 class="font-bold text-xs uppercase tracking-wider" style="color: var(--accent-primary);">4. Night Watch & Prayer Sections</h4>
             <label class="flex items-center justify-between p-2 rounded-xl lh-surface cursor-pointer text-xs">
-              <span class="font-medium lh-text-main">Include Active Intercession Deck + Write-In Lines</span>
+              <span class="font-medium lh-text-main">Include Section I: Night Watch Checklist</span>
+              <input type="checkbox" ${cfg.includeNightPlan ? 'checked' : ''}
+                onchange="window.Lighthouse.updatePdfConfig('includeNightPlan', this.checked)" class="w-4 h-4" />
+            </label>
+            <label class="flex items-center justify-between p-2 rounded-xl lh-surface cursor-pointer text-xs">
+              <span class="font-medium lh-text-main">Include Section II: Active Intercession Deck</span>
               <input type="checkbox" ${cfg.includePrayerDeck ? 'checked' : ''}
                 onchange="window.Lighthouse.updatePdfConfig('includePrayerDeck', this.checked)" class="w-4 h-4" />
             </label>
-
             <div>
               <label class="text-[11px] font-semibold lh-text-sec block mb-1">Guided Prayer Method Box</label>
-              <select onchange="window.Lighthouse.updatePdfConfig('guidedPrayerMethod', this.value)" class="w-full px-2.5 py-2 rounded-xl lh-input text-xs">
-                <option value="PRAY" ${cfg.guidedPrayerMethod === 'PRAY' ? 'selected' : ''}>Lectio 365 P.R.A.Y. Flow (Pause, Rejoice, Ask, Yield)</option>
-                <option value="LORDS_PRAYER" ${cfg.guidedPrayerMethod === 'LORDS_PRAYER' ? 'selected' : ''}>The Lord’s Prayer 6-Petition Walk (Matt 6:9–13)</option>
+              <select onchange="window.Lighthouse.updatePdfConfig('guidedPrayerMethod', this.value)" class="w-full px-2.5 py-1.5 rounded-xl lh-input text-xs">
+                <option value="PRAY" ${cfg.guidedPrayerMethod === 'PRAY' ? 'selected' : ''}>Lectio 365 P.R.A.Y. Flow</option>
+                <option value="LORDS_PRAYER" ${cfg.guidedPrayerMethod === 'LORDS_PRAYER' ? 'selected' : ''}>Lord’s Prayer 6-Petition Walk</option>
                 <option value="NONE" ${cfg.guidedPrayerMethod === 'NONE' ? 'selected' : ''}>None</option>
               </select>
-            </div>
-
-            <div>
-              <label class="text-[11px] font-semibold lh-text-sec block mb-1">Include Jesus’s Teaching Cards (NASB/NLT):</label>
-              <div class="max-h-36 overflow-y-auto space-y-1 pr-1">
-                ${JESUS_PRAYER_THEMES.map((t) => {
-                  const checked = (cfg.selectedJesusThemeIds || []).includes(t.id);
-                  return `
-                    <label class="flex items-center gap-2 p-1.5 rounded-lg lh-surface cursor-pointer text-[11px]">
-                      <input type="checkbox" ${checked ? 'checked' : ''}
-                        onchange="window.Lighthouse.togglePdfJesusTheme('${t.id}')" class="w-3.5 h-3.5 shrink-0" />
-                      <span class="lh-text-main truncate">${escapeHtml(t.theme)} (${escapeHtml(t.reference)})</span>
-                    </label>
-                  `;
-                }).join('')}
-              </div>
-            </div>
-          </div>
-
-          <!-- 4. Tonight's Night Watch Wind-Down Checklist Selector -->
-          <div class="p-4 rounded-2xl lh-elevated space-y-2.5">
-            <div class="flex items-center justify-between">
-              <h4 class="font-bold text-xs uppercase tracking-wider" style="color: var(--accent-primary);">4. Night Watch Wind-Down Plan</h4>
-              <button onclick="window.Lighthouse.syncPdfNightCardsFromBoard()" class="text-[11px] font-semibold px-2 py-0.5 rounded-lg lh-btn-soft">
-                Sync from My Night Board
-              </button>
-            </div>
-            <div class="max-h-44 overflow-y-auto space-y-1 pr-1">
-              ${NIGHT_LIBRARY.map((c) => {
-                const checked = (cfg.selectedNightCardIds || []).includes(c.id);
-                return `
-                  <label class="flex items-center gap-2 p-1.5 rounded-lg lh-surface cursor-pointer text-[11px]">
-                    <input type="checkbox" ${checked ? 'checked' : ''}
-                      onchange="window.Lighthouse.togglePdfNightCard('${c.id}')" class="w-3.5 h-3.5 shrink-0" />
-                    <span class="lh-text-main truncate">${escapeHtml(c.defaultTime)} • ${escapeHtml(c.title)}</span>
-                  </label>
-                `;
-              }).join('')}
             </div>
           </div>
         </div>
 
-        <!-- RIGHT COLUMN: LIVE 8.5" x 11" PAPER PREVIEW -->
-        <div class="lg:col-span-7 bg-slate-900/90 rounded-2xl p-3 sm:p-5 overflow-y-auto max-h-[76vh] border lh-border">
+        <!-- RIGHT COLUMN: LIVE 8.5" x 11" INK-SAVER PAPER PREVIEW -->
+        <div class="${mobPane === 'controls' ? 'hidden lg:block' : 'block'} lg:col-span-7 bg-slate-900/95 p-3 sm:p-6 overflow-y-auto max-h-[82vh]">
           <div class="flex items-center justify-between mb-3 text-xs text-slate-300">
-            <span class="font-semibold">Live 8.5" × 11" Binder Sheet Preview (3-Hole Punch Ready)</span>
-            <span class="font-mono-code text-[11px] text-amber-300">${cfg.pageTarget === '2page' ? '2 Pages (Front & Back)' : '1 Page Condensed'}</span>
+            <span class="font-semibold flex items-center gap-1.5">
+              <i data-lucide="file-check" class="w-4 h-4 text-emerald-400"></i>
+              Live 8.5" × 11" Ink-Saver Binder Preview
+            </span>
+            <span class="font-mono-code text-[11px] text-amber-300">
+              ${cfg.pageTarget === '2page' ? 'Page 1: Plan & Prayer • Page 2: Captain’s Log' : cfg.pageTarget === 'log_only' ? '1 Page: Captain’s Log Only' : '1 Page Condensed'}
+            </span>
           </div>
-          <div id="pdf-live-paper-preview" class="overflow-x-auto">
+          <div id="pdf-live-paper-preview" class="overflow-x-auto pb-8">
             ${buildPrintableBinderSheetHtml()}
           </div>
         </div>
@@ -3888,6 +4661,30 @@
         saveState();
         showToast(`Scheduled "${g.title}" on 24h Watchtower!`);
       },
+      createGoal() {
+        const title = (document.getElementById('goal-title')?.value || '').trim();
+        if (!title) return showToast('Enter a goal title first.');
+        const identityStatement = (document.getElementById('goal-identity')?.value || '').trim();
+        const wish = (document.getElementById('goal-wish')?.value || '').trim();
+        const outcome = (document.getElementById('goal-outcome')?.value || '').trim();
+        const obstacle = (document.getElementById('goal-obstacle')?.value || '').trim();
+        const ifThenPlan = (document.getElementById('goal-ifthen')?.value || '').trim();
+        state.goals.unshift({
+          id: `goal-${Date.now()}`,
+          title,
+          identityStatement,
+          wish,
+          outcome,
+          obstacle,
+          ifThenPlan,
+          progressPct: 10,
+          streakDays: 1,
+          status: 'active'
+        });
+        saveState();
+        renderApp();
+        showToast(`Charted new WOOP Beacon: "${title}"!`);
+      },
       deleteGoal(goalId) {
         state.goals = state.goals.filter((g) => g.id !== goalId);
         saveState();
@@ -3970,7 +4767,7 @@
 
       // Analog Night Watch & 3-Hole Binder PDF Builder Methods
       openPdfBuilder() {
-        if (!state.pdfConfig) state.pdfConfig = structuredClone(INITIAL_STATE.pdfConfig);
+        state.pdfConfig = { ... structuredClone(INITIAL_STATE.pdfConfig), ...(state.pdfConfig || {}) };
         const modal = document.getElementById('pdf-builder-modal');
         modal.classList.remove('hidden');
         modal.classList.add('flex');
@@ -3982,12 +4779,81 @@
         modal.classList.add('hidden');
         modal.classList.remove('flex');
       },
+      setPdfMobilePane(pane) {
+        state.pdfConfig.mobilePane = pane;
+        renderPdfBuilderModalContent();
+        if (window.lucide) window.lucide.createIcons();
+      },
       updatePdfConfig(key, val) {
-        if (!state.pdfConfig) state.pdfConfig = structuredClone(INITIAL_STATE.pdfConfig);
+        state.pdfConfig = { ...structuredClone(INITIAL_STATE.pdfConfig), ...(state.pdfConfig || {}) };
         state.pdfConfig[key] = val;
         saveState();
         renderPdfBuilderModalContent();
         if (window.lucide) window.lucide.createIcons();
+      },
+      // Real-time slider handler: updates badge & live paper preview WITHOUT destroying slider focus
+      liveSlidePdfConfig(key, id, rawVal, unit = 'lines') {
+        const num = Number(rawVal);
+        state.pdfConfig[key] = num;
+        const badge = document.getElementById(`slider-badge-${id}`);
+        if (badge) badge.textContent = `${num} ${unit}`;
+        const preview = document.getElementById('pdf-live-paper-preview');
+        if (preview) preview.innerHTML = buildPrintableBinderSheetHtml();
+        saveState();
+      },
+      stepPdfSlider(key, delta, min, max) {
+        const cur = Number(state.pdfConfig?.[key] ?? min);
+        const next = Math.min(max, Math.max(min, cur + delta));
+        state.pdfConfig[key] = next;
+        saveState();
+        renderPdfBuilderModalContent();
+        if (window.lucide) window.lucide.createIcons();
+      },
+      applyPdfLinePreset(preset) {
+        if (preset === 'compact') {
+          Object.assign(state.pdfConfig, {
+            lineHeightPx: 20,
+            prayerNoteLines: 1,
+            winsLines: 3,
+            lessonsLines: 2,
+            intentionLines: 2,
+            examenStepLines: 2,
+            baylorTaskRows: 6,
+            baylorAnchorLines: 2,
+            deepPrimaryLines: 5,
+            deepSecondaryLines: 3
+          });
+        } else if (preset === 'balanced') {
+          Object.assign(state.pdfConfig, {
+            lineHeightPx: 24,
+            prayerNoteLines: 1,
+            winsLines: 6,
+            lessonsLines: 4,
+            intentionLines: 3,
+            examenStepLines: 4,
+            baylorTaskRows: 8,
+            baylorAnchorLines: 3,
+            deepPrimaryLines: 8,
+            deepSecondaryLines: 5
+          });
+        } else if (preset === 'deep') {
+          Object.assign(state.pdfConfig, {
+            lineHeightPx: 27,
+            prayerNoteLines: 2,
+            winsLines: 9,
+            lessonsLines: 6,
+            intentionLines: 4,
+            examenStepLines: 6,
+            baylorTaskRows: 10,
+            baylorAnchorLines: 4,
+            deepPrimaryLines: 12,
+            deepSecondaryLines: 7
+          });
+        }
+        saveState();
+        renderPdfBuilderModalContent();
+        if (window.lucide) window.lucide.createIcons();
+        showToast(`Applied "${preset}" line-count preset!`);
       },
       togglePdfNightCard(cardId, fromCardButton = false) {
         if (!state.pdfConfig) state.pdfConfig = structuredClone(INITIAL_STATE.pdfConfig);
@@ -4020,15 +4886,21 @@
           showToast(exists ? 'Removed journal method from Print Sheet.' : 'Added journal method to Print Sheet!');
         } else {
           renderPdfBuilderModalContent();
+          if (window.lucide) window.lucide.createIcons();
         }
       },
-      togglePdfJesusTheme(themeId) {
+      togglePdfJesusTheme(themeId, fromCard = false) {
         if (!state.pdfConfig) state.pdfConfig = structuredClone(INITIAL_STATE.pdfConfig);
         const cur = state.pdfConfig.selectedJesusThemeIds || [];
         const exists = cur.includes(themeId);
         state.pdfConfig.selectedJesusThemeIds = exists ? cur.filter((id) => id !== themeId) : [...cur, themeId];
         saveState();
-        renderPdfBuilderModalContent();
+        if (fromCard) {
+          renderApp();
+          showToast(exists ? 'Removed teaching from PDF.' : 'Added Jesus’s teaching to PDF!');
+        } else {
+          renderPdfBuilderModalContent();
+        }
       },
       async downloadNightBinderPdf() {
         const element = document.getElementById('printable-binder-document');
@@ -4036,15 +4908,15 @@
         if (typeof window.html2pdf !== 'function') {
           return this.triggerNativePrint();
         }
-        showToast('Generating 3-Hole Binder PDF...');
+        showToast('Generating Ink-Saver 3-Hole Binder PDF...');
         const dateStr = state.pdfConfig?.sheetDate || new Date().toISOString().slice(0, 10);
         const opt = {
-          margin: 0.15,
+          margin: [0.15, 0.15, 0.15, 0.15],
           filename: `Lighthouse-Night-Binder-${dateStr}.pdf`,
           image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+          html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', scrollY: 0 },
           jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' },
-          pagebreak: { mode: ['css', 'legacy'] }
+          pagebreak: { mode: ['css', 'legacy'], avoid: '.avoid-break' }
         };
         try {
           await window.html2pdf().set(opt).from(element).save();
@@ -4233,4 +5105,4 @@
     renderApp();
   </script>
 </body>
-  </html>
+</html>
