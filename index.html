@@ -394,10 +394,15 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-2 gap-2 pt-1">
+      <div class="grid grid-cols-3 gap-2 pt-1">
+        <a id="qr-modal-open-link" href="#" target="_blank" rel="noopener noreferrer"
+          class="py-2.5 px-3 rounded-xl lh-btn-soft text-xs flex items-center justify-center gap-1.5 font-semibold">
+          <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+          <span>Open Site</span>
+        </a>
         <button onclick="window.Lighthouse.downloadQrSvg()" class="py-2.5 px-3 rounded-xl lh-btn-primary text-xs flex items-center justify-center gap-1.5">
           <i data-lucide="download" class="w-3.5 h-3.5"></i>
-          <span>Download QR SVG</span>
+          <span>Save SVG</span>
         </button>
         <button onclick="window.Lighthouse.closeQrModal()" class="py-2.5 px-3 rounded-xl lh-elevated lh-text-main text-xs font-semibold">
           Done
@@ -2636,6 +2641,36 @@
     // =========================================================================
     // STATION 5: PRAYER SANCTUARY (DEDICATED MAIN BOARD + EXPANDED CARDS)
     // =========================================================================
+    const PRAYER_CATEGORY_OPTIONS = [
+      'Marriage & Regla',
+      'Family & Sons',
+      'Church & Safety Team',
+      'Work & Stewardship',
+      'Personal Walk',
+      'Health & Strength',
+      'Friends & Neighbors',
+      'Mission & Witness',
+      'Other / General',
+      'Custom Category...'
+    ];
+
+    function renderPrayerCategorySelectHtml(selectId, customInputId, defaultVal = 'Marriage & Regla') {
+      return `
+        <div class="space-y-2">
+          <select id="${selectId}"
+            onchange="window.Lighthouse.handlePrayerCategoryChange('${selectId}', '${customInputId}')"
+            class="w-full px-3 py-2.5 rounded-xl lh-input">
+            ${PRAYER_CATEGORY_OPTIONS.map(
+              (opt) => `<option value="${escapeHtml(opt)}" ${opt === defaultVal ? 'selected' : ''}>${escapeHtml(opt)}</option>`
+            ).join('')}
+          </select>
+          <input id="${customInputId}" type="text"
+            placeholder="Type your custom category name..."
+            class="hidden w-full px-3 py-2.5 rounded-xl lh-input" />
+        </div>
+      `;
+    }
+
     function renderPrayerView() {
       const activeBoardCards = (state.prayerCards || []).filter((c) => !c.isAnswered && c.onActiveBoard);
       const allIntercessionCards = (state.prayerCards || []).filter((c) => !c.isAnswered);
@@ -2678,7 +2713,7 @@
               <div>
                 <span class="text-[11px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full lh-badge">Sanctuary Main Board</span>
                 <h3 class="text-lg sm:text-xl font-bold lh-text-main mt-1">Today’s Active Prayer Watch (${activeBoardCards.length} Pinned)</h3>
-                <p class="text-xs lh-text-sec">Tap any card to open its Scripture & notes modal, log today’s intercession, or print your screen-free Night Prayer & Binder Sheet.</p>
+                <p class="text-xs lh-text-sec">Quickly add a prayer right from your phone below, tap any card for details, or print your screen-free Night Binder Sheet.</p>
               </div>
               <div class="flex flex-wrap items-center gap-2">
                 <button onclick="window.Lighthouse.openPdfBuilder()"
@@ -2694,9 +2729,50 @@
               </div>
             </div>
 
+            <!-- THUMB-FRIENDLY MOBILE QUICK-ADD PRAYER BAR (RIGHT AT TOP OF BOARD) -->
+            <div class="p-3.5 sm:p-4 rounded-2xl lh-elevated space-y-3 border-l-4" style="border-left-color: var(--accent-primary);">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5" style="color: var(--accent-primary);">
+                  <i data-lucide="plus-circle" class="w-4 h-4"></i>
+                  <span>Quick-Add Prayer to Board</span>
+                </span>
+                <label class="flex items-center gap-1.5 text-xs lh-text-sec cursor-pointer select-none">
+                  <input id="quick-pray-pin" type="checkbox" checked class="w-4 h-4 rounded" />
+                  <span>Pin to Active Watch</span>
+                </label>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                <div class="sm:col-span-5">
+                  <input id="quick-pray-title" type="text"
+                    onkeydown="if(event.key==='Enter') window.Lighthouse.quickAddPrayerCard()"
+                    placeholder="Who or what are you praying for?"
+                    class="w-full px-3.5 py-2.5 rounded-xl lh-input" />
+                </div>
+                <div class="sm:col-span-4">
+                  ${renderPrayerCategorySelectHtml('quick-pray-cat', 'quick-pray-custom-cat', 'Marriage & Regla')}
+                </div>
+                <div class="sm:col-span-3">
+                  <button onclick="window.Lighthouse.quickAddPrayerCard()"
+                    class="w-full h-full min-h-[44px] py-2.5 px-4 rounded-xl lh-btn-primary text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 shadow-sm">
+                    <i data-lucide="plus" class="w-4 h-4"></i>
+                    <span>+ Add to Prayer Board</span>
+                  </button>
+                </div>
+              </div>
+
+              <details class="text-xs lh-text-sec">
+                <summary class="cursor-pointer font-medium hover:lh-text-main select-none">+ Add optional Scripture anchor or request notes</summary>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2.5">
+                  <input id="quick-pray-ref" type="text" placeholder="Scripture (e.g. Phil 4:6-7)" class="px-3 py-2 rounded-xl lh-input" />
+                  <input id="quick-pray-notes" type="text" placeholder="Specific request details or praise note..." class="sm:col-span-2 px-3 py-2 rounded-xl lh-input" />
+                </div>
+              </details>
+            </div>
+
             ${
               activeBoardCards.length === 0
-                ? `<p class="text-xs lh-text-sec py-4 text-center">No cards pinned to your Active Prayer Board yet. Pin cards from your Intercession Deck or Jesus’s Teachings below.</p>`
+                ? `<p class="text-xs lh-text-sec py-4 text-center">No cards pinned to your Active Prayer Board yet. Use the Quick-Add bar above or tap "+ Pin to Board" on any card below.</p>`
                 : `<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     ${activeBoardCards
                       .map(
@@ -2713,17 +2789,17 @@
                           </div>
                           <div class="pt-2 border-t lh-border flex items-center justify-between gap-1.5">
                             <button onclick="window.Lighthouse.prayForCard('${c.id}')"
-                              class="flex-1 py-1.5 px-2.5 rounded-lg lh-btn-primary text-[11px] flex items-center justify-center gap-1">
-                              <i data-lucide="heart" class="w-3 h-3"></i>
+                              class="flex-1 py-2 px-2.5 rounded-xl lh-btn-primary text-xs flex items-center justify-center gap-1">
+                              <i data-lucide="heart" class="w-3.5 h-3.5"></i>
                               <span>Amen (+1)</span>
                             </button>
                             <button onclick="window.Lighthouse.openPrayerCardDetail('${c.id}')"
-                              class="p-1.5 rounded-lg lh-surface lh-text-sec hover:lh-text-main" title="Details">
-                              <i data-lucide="book-open" class="w-3.5 h-3.5"></i>
+                              class="p-2 rounded-xl lh-surface lh-text-sec hover:lh-text-main" title="Details">
+                              <i data-lucide="book-open" class="w-4 h-4"></i>
                             </button>
                             <button onclick="window.Lighthouse.togglePrayerBoardPin('${c.id}')"
-                              class="p-1.5 rounded-lg lh-surface lh-text-muted hover:lh-text-main" title="Unpin from Active Board">
-                              <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                              class="p-2 rounded-xl lh-surface lh-text-muted hover:lh-text-main" title="Unpin from Active Board">
+                              <i data-lucide="x" class="w-4 h-4"></i>
                             </button>
                           </div>
                         </div>
@@ -2745,7 +2821,7 @@
               .map(
                 (t) => `
                 <button onclick="window.Lighthouse.setPrayerSubTab('${t.id}')"
-                  class="px-3.5 py-2 rounded-xl text-xs font-semibold shrink-0 transition ${
+                  class="px-3.5 py-2.5 rounded-xl text-xs font-semibold shrink-0 transition ${
                     sub === t.id ? 'lh-btn-primary' : 'lh-surface lh-text-sec hover:lh-text-main'
                   }">
                   ${escapeHtml(t.label)}
@@ -2775,16 +2851,16 @@
                             <p class="text-xs lh-text-sec leading-relaxed">${escapeHtml(c.notes || '')}</p>
                           </div>
                           <div class="pt-2.5 border-t lh-border flex items-center justify-between gap-2">
-                            <button onclick="window.Lighthouse.prayForCard('${c.id}')" class="px-3 py-1.5 rounded-lg lh-btn-primary text-xs">
+                            <button onclick="window.Lighthouse.prayForCard('${c.id}')" class="py-2 px-3 rounded-xl lh-btn-primary text-xs font-bold">
                               Amen (+1)
                             </button>
                             <div class="flex items-center gap-1.5">
                               <button onclick="window.Lighthouse.togglePrayerBoardPin('${c.id}')"
-                                class="px-2.5 py-1.5 rounded-lg text-xs font-semibold ${c.onActiveBoard ? 'lh-badge-success' : 'lh-elevated lh-text-main'}">
-                                ${c.onActiveBoard ? '✓ Pinned' : '+ Pin Board'}
+                                class="py-2 px-3 rounded-xl text-xs font-bold ${c.onActiveBoard ? 'lh-badge-success' : 'lh-btn-soft'}">
+                                ${c.onActiveBoard ? '✓ On Board' : '+ Pin Board'}
                               </button>
                               <button onclick="window.Lighthouse.markPrayerAnswered('${c.id}')"
-                                class="px-2 py-1.5 rounded-lg lh-elevated lh-text-sec hover:lh-text-main text-xs" title="Mark Answered">
+                                class="py-2 px-2.5 rounded-xl lh-elevated lh-text-sec hover:lh-text-main text-xs font-semibold" title="Mark Answered">
                                 Answered
                               </button>
                             </div>
@@ -2795,23 +2871,23 @@
                       .join('')}
                   </div>
 
-                  <!-- Add New Intercession Card -->
+                  <!-- Detailed Add New Intercession Card Form -->
                   <div class="lh-surface rounded-2xl p-4 sm:p-5 space-y-3">
-                    <h4 class="font-bold text-sm lh-text-main">Add New Intercession Card</h4>
+                    <div class="flex items-center justify-between">
+                      <h4 class="font-bold text-sm lh-text-main">Add Detailed Intercession Card</h4>
+                      <label class="flex items-center gap-1.5 text-xs lh-text-sec cursor-pointer">
+                        <input id="pray-pin-toggle" type="checkbox" checked class="w-4 h-4 rounded" />
+                        <span>Pin to Active Board</span>
+                      </label>
+                    </div>
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      <input id="pray-title" type="text" placeholder="Person or Prayer Target..." class="px-3 py-2 rounded-xl lh-input" />
-                      <select id="pray-cat" class="px-3 py-2 rounded-xl lh-input">
-                        <option value="Marriage & Family">Marriage & Family</option>
-                        <option value="Church & Ministry">Church & Ministry</option>
-                        <option value="Personal Walk">Personal Walk</option>
-                        <option value="Health & Strength">Health & Strength</option>
-                        <option value="Mission">Mission & Witness</option>
-                      </select>
-                      <input id="pray-ref" type="text" placeholder="Scripture Anchor (e.g. Col 1:9-10)" class="px-3 py-2 rounded-xl lh-input" />
+                      <input id="pray-title" type="text" placeholder="Person or Prayer Target..." class="px-3 py-2.5 rounded-xl lh-input" />
+                      ${renderPrayerCategorySelectHtml('pray-cat', 'pray-custom-cat', 'Marriage & Regla')}
+                      <input id="pray-ref" type="text" placeholder="Scripture Anchor (e.g. Col 1:9-10)" class="px-3 py-2.5 rounded-xl lh-input" />
                     </div>
                     <textarea id="pray-notes" rows="2" placeholder="Specific prayer request or Scripture reflection..." class="w-full p-3 rounded-xl lh-input"></textarea>
-                    <button onclick="window.Lighthouse.createPrayerCard()" class="px-4 py-2 rounded-xl lh-btn-primary text-xs">
-                      + Add & Pin to Prayer Board
+                    <button onclick="window.Lighthouse.createPrayerCard()" class="w-full sm:w-auto px-5 py-2.5 rounded-xl lh-btn-primary text-xs sm:text-sm font-bold">
+                      + Add to Prayer Sanctuary
                     </button>
                   </div>
                 </div>
@@ -2843,17 +2919,17 @@
                           </div>
                           <div class="pt-2.5 border-t lh-border flex items-center justify-between gap-1.5">
                             <button onclick="window.Lighthouse.openJesusTeachingDetail('${t.id}')"
-                              class="text-xs font-semibold lh-text-sec hover:lh-text-main flex items-center gap-1">
+                              class="text-xs font-semibold lh-text-sec hover:lh-text-main flex items-center gap-1 py-1.5">
                               <i data-lucide="book-open" class="w-3.5 h-3.5" style="color: var(--accent-primary);"></i>
                               <span>NASB / NLT</span>
                             </button>
-                            <div class="flex items-center gap-1">
+                            <div class="flex items-center gap-1.5">
                               <button onclick="window.Lighthouse.togglePdfJesusTheme('${t.id}', true)"
-                                class="px-2 py-1 rounded-lg text-[11px] font-semibold ${inPdf ? 'lh-badge-success' : 'lh-elevated lh-text-sec'}">
-                                ${inPdf ? '✓ In PDF' : '+ PDF'}
+                                class="px-2.5 py-2 rounded-xl text-xs font-semibold ${inPdf ? 'lh-badge-success' : 'lh-elevated lh-text-sec'}">
+                                ${inPdf ? '✓ PDF' : '+ PDF'}
                               </button>
                               <button onclick="window.Lighthouse.addJesusThemeToBoard('${t.id}')"
-                                class="px-2.5 py-1 rounded-lg lh-btn-primary text-xs">
+                                class="px-3 py-2 rounded-xl lh-btn-primary text-xs font-bold">
                                 + Pin Board
                               </button>
                             </div>
@@ -2938,306 +3014,40 @@
     }
 
     // =========================================================================
-    // STATION 6: CHARTED COURSE (PSYCHOLOGY & NEUROSCIENCE GOAL ENGINE)
+    // REAL QR CODE GENERATOR ENGINE (SVG MATRIX + AUTOMATIC IMAGE FALLBACK)
     // =========================================================================
-    function renderGoalsView() {
-      const activeGoals = (state.goals || []).filter((g) => g.status === 'active');
-      const maxWip = state.settings.maxActiveGoals || 3;
+    function generateRealQrSvg(urlText) {
+      const cleanUrl = (urlText || 'https://schuler314.github.io').trim();
+      try {
+        if (typeof window.qrcode === 'function') {
+          const qr = window.qrcode(0, 'M');
+          qr.addData(cleanUrl);
+          qr.make();
+          return qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
+        }
+      } catch {
+        // Fall through to reliable image fallback below
+      }
+      const encoded = encodeURIComponent(cleanUrl);
+      return `<img src="https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=10&data=${encoded}" alt="QR Code for ${escapeHtml(cleanUrl)}" class="w-full h-full object-contain rounded-lg" />`;
+    }
 
+    function renderQrModalGraphicHtml(urlText) {
+      const cleanUrl = (urlText || 'https://schuler314.github.io').trim();
+      const encoded = encodeURIComponent(cleanUrl);
+      const primaryGraphic = generateRealQrSvg(cleanUrl);
       return `
-        <div class="space-y-6">
-          <!-- ANTERIOR MID-CINGULATE CORTEX (aMCC) DAILY FRICTION BUILDER -->
-          <div class="lh-surface rounded-2xl p-4 sm:p-6 space-y-4">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <span class="text-[11px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full lh-badge">Neuroscience Tenacity Builder</span>
-                <h3 class="text-lg sm:text-xl font-bold lh-text-main mt-1">Anterior Mid-Cingulate Cortex (aMCC) Daily Friction Score</h3>
-                <p class="text-xs lh-text-sec">Your aMCC grows when you lean into healthy micro-friction (e.g., 30-minute Wake-to-Workout ramp with zero snooze).</p>
-              </div>
-              <div class="text-right">
-                <span class="text-2xl font-bold font-mono-code" style="color: var(--accent-primary);">${state.dailyAmccScore || 7}/10</span>
-                <span class="text-[11px] lh-text-sec block">Today’s Tenacity Load</span>
-              </div>
-            </div>
-            <div class="flex items-center gap-4">
-              <span class="text-xs lh-text-sec">Low Friction (1)</span>
-              <input type="range" min="1" max="10" value="${state.dailyAmccScore || 7}"
-                oninput="window.Lighthouse.setAmccScore(this.value)" class="flex-1" />
-              <span class="text-xs lh-text-sec">High Tenacity (10)</span>
-            </div>
+        <div class="bg-white p-3.5 rounded-2xl shadow-inner inline-flex flex-col items-center justify-center w-56 h-56 mx-auto">
+          <div class="w-full h-full flex items-center justify-center [&>svg]:w-full [&>svg]:h-full">
+            ${primaryGraphic}
           </div>
-
-          <!-- WOOP + GOLLWITZER IMPLEMENTATION INTENTION BEACONS -->
-          <div class="space-y-4">
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h3 class="text-base sm:text-lg font-bold lh-text-main">Active Course Beacons (${activeGoals.length}/${maxWip} WIP Focus Limit)</h3>
-                <p class="text-xs lh-text-sec">Uses Gabriele Oettingen’s Mental Contrasting (WOOP) + Peter Gollwitzer’s IF-THEN Implementation Intentions.</p>
-              </div>
-            </div>
-
-            <div class="grid grid-cols-1 gap-4">
-              ${activeGoals
-                .map(
-                  (g) => `
-                  <div class="lh-surface rounded-2xl p-4 sm:p-5 space-y-4">
-                    <div class="flex flex-wrap items-start justify-between gap-3 pb-3 border-b lh-border">
-                      <div>
-                        <div class="flex items-center gap-2">
-                          <span class="text-[10px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full lh-badge">Active Beacon</span>
-                          <span class="text-xs font-mono-code lh-text-sec">🔥 ${g.streakDays || 0}-Day Streak</span>
-                        </div>
-                        <h4 class="text-base sm:text-lg font-bold lh-text-main mt-1">${escapeHtml(g.title)}</h4>
-                        <p class="text-xs italic lh-text-sec mt-0.5">Identity Anchor: “${escapeHtml(g.identityStatement || '')}”</p>
-                      </div>
-                      <div class="flex items-center gap-2">
-                        <button onclick="window.Lighthouse.logGoalRep('${g.id}')" class="px-3 py-1.5 rounded-xl lh-btn-primary text-xs">
-                          + Log Today’s Rep (${g.progressPct || 0}%)
-                        </button>
-                        <button onclick="window.Lighthouse.pushGoalToWatch('${g.id}')" class="px-3 py-1.5 rounded-xl lh-btn-soft text-xs">
-                          + 24h Watch
-                        </button>
-                        <button onclick="window.Lighthouse.deleteGoal('${g.id}')" class="p-1.5 rounded-lg lh-text-muted hover:lh-text-main">
-                          <i data-lucide="trash-2" class="w-4 h-4"></i>
-                        </button>
-                      </div>
-                    </div>
-
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-                      <div class="p-3 rounded-xl lh-elevated space-y-1">
-                        <span class="font-bold uppercase tracking-wider lh-text-sec block text-[10px]">Wish & Best Outcome</span>
-                        <p class="lh-text-main font-medium">${escapeHtml(g.wish || '')}</p>
-                        <p class="lh-text-sec">${escapeHtml(g.outcome || '')}</p>
-                      </div>
-                      <div class="p-3 rounded-xl lh-elevated space-y-1">
-                        <span class="font-bold uppercase tracking-wider lh-text-sec block text-[10px]">Critical Internal Obstacle</span>
-                        <p class="lh-text-main">${escapeHtml(g.obstacle || '')}</p>
-                      </div>
-                      <div class="p-3 rounded-xl lh-surface border-l-4 space-y-1" style="border-left-color: var(--accent-primary);">
-                        <span class="font-bold uppercase tracking-wider block text-[10px]" style="color: var(--accent-primary);">Gollwitzer IF-THEN Plan</span>
-                        <p class="lh-text-main font-semibold">${escapeHtml(g.ifThenPlan || '')}</p>
-                      </div>
-                    </div>
-
-                    <div class="w-full h-2 rounded-full lh-elevated overflow-hidden">
-                      <div class="h-full rounded-full transition-all" style="width: ${g.progressPct || 10}%; background-color: var(--accent-primary);"></div>
-                    </div>
-                  </div>
-                `
-                )
-                .join('')}
-            </div>
-
-            <!-- Add New WOOP Goal Form -->
-            <div class="lh-surface rounded-2xl p-4 sm:p-5 space-y-3">
-              <h4 class="font-bold text-sm lh-text-main">Chart a New WOOP + IF-THEN Beacon</h4>
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <input id="goal-title" type="text" placeholder="Goal Title (e.g., 30-Min Wake-to-Workout)" class="px-3 py-2 rounded-xl lh-input" />
-                <input id="goal-identity" type="text" placeholder="Identity Anchor (Who I am becoming...)" class="px-3 py-2 rounded-xl lh-input" />
-                <input id="goal-wish" type="text" placeholder="Specific Wish / Target..." class="px-3 py-2 rounded-xl lh-input" />
-                <input id="goal-outcome" type="text" placeholder="Best Physiological / Spiritual Outcome..." class="px-3 py-2 rounded-xl lh-input" />
-                <input id="goal-obstacle" type="text" placeholder="Main Internal Obstacle..." class="px-3 py-2 rounded-xl lh-input" />
-                <input id="goal-ifthen" type="text" placeholder="IF [Obstacle], THEN I WILL [Immediate Action]..." class="px-3 py-2 rounded-xl lh-input" />
-              </div>
-              <button onclick="window.Lighthouse.createGoal()" class="px-4 py-2 rounded-xl lh-btn-primary text-xs">
-                + Add WOOP Beacon
-              </button>
-            </div>
-          </div>
+          <noscript>
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=10&data=${encoded}" alt="QR Code" class="w-48 h-48" />
+          </noscript>
         </div>
       `;
     }
 
-    // =========================================================================
-    // STATION 7: FLEET DOCK (CODED SITES & WEB APPS LAUNCHPAD WITH REAL QR)
-    // =========================================================================
-    function renderLaunchpadView() {
-      return `
-        <div class="space-y-6">
-          <div class="lh-surface rounded-2xl p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <span class="text-[11px] font-semibold uppercase tracking-wider lh-text-sec">Developer App Dock</span>
-              <h3 class="text-lg sm:text-xl font-bold lh-text-main mt-0.5">Fleet Dock — Coded Sites & Web Apps (${(state.codedSites || []).length})</h3>
-              <p class="text-xs lh-text-sec">Launch your custom apps, jot down next-feature ideas, or tap QR to scan any app onto another phone or tablet.</p>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            ${(state.codedSites || [])
-              .map(
-                (site) => `
-                <div class="lh-surface rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-4">
-                  <div class="space-y-2.5">
-                    <div class="flex items-center justify-between gap-2">
-                      <span class="text-[10px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full lh-badge">${escapeHtml(site.category || 'Web App')}</span>
-                      <div class="flex items-center gap-1.5">
-                        <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full lh-badge-success">${escapeHtml(site.status || 'Live')}</span>
-                        <button onclick="window.Lighthouse.openQrModal('${site.id}')"
-                          class="p-1.5 rounded-lg lh-elevated lh-text-sec hover:lh-text-main flex items-center gap-1 text-xs" title="Show Scannable QR Code">
-                          <i data-lucide="qr-code" class="w-4 h-4" style="color: var(--accent-primary);"></i>
-                          <span class="text-[11px] font-semibold">QR</span>
-                        </button>
-                        <button onclick="window.Lighthouse.deleteSite('${site.id}')" class="p-1.5 rounded-lg lh-text-muted hover:lh-text-main">
-                          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-                        </button>
-                      </div>
-                    </div>
-
-                    <div>
-                      <h4 class="font-bold text-base lh-text-main">${escapeHtml(site.title)}</h4>
-                      <p class="text-xs lh-text-sec mt-0.5">${escapeHtml(site.tagline || '')}</p>
-                      <p class="text-[11px] font-mono-code lh-text-muted truncate mt-1">${escapeHtml(site.url)}</p>
-                    </div>
-
-                    <div class="pt-1">
-                      <label class="text-[10px] font-semibold uppercase tracking-wider lh-text-sec block mb-1">Quick Scratchpad (Next Feature / Fix):</label>
-                      <input type="text" value="${escapeHtml(site.nextTodo || '')}"
-                        oninput="window.Lighthouse.updateSiteTodo('${site.id}', this.value)"
-                        placeholder="Jot next feature idea or bug fix..."
-                        class="w-full px-3 py-1.5 rounded-xl lh-input text-xs" />
-                    </div>
-                  </div>
-
-                  <div class="pt-2.5 border-t lh-border flex items-center justify-between gap-2">
-                    <a href="${escapeHtml(site.url)}" target="_blank" rel="noopener noreferrer"
-                      class="flex-1 py-2 px-3 rounded-xl lh-btn-primary text-xs flex items-center justify-center gap-1.5">
-                      <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
-                      <span>Launch App</span>
-                    </a>
-                    <button onclick="window.Lighthouse.openQrModal('${site.id}')"
-                      class="py-2 px-3 rounded-xl lh-btn-soft text-xs flex items-center gap-1.5">
-                      <i data-lucide="qr-code" class="w-3.5 h-3.5"></i>
-                      <span>Scan QR</span>
-                    </button>
-                  </div>
-                </div>
-              `
-              )
-              .join('')}
-          </div>
-
-          <!-- ADD NEW CODED SITE -->
-          <div class="lh-surface rounded-2xl p-4 sm:p-5 space-y-3">
-            <h4 class="font-bold text-sm lh-text-main">Add Coded Web App to Fleet Dock</h4>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-              <input id="site-title" type="text" placeholder="App Title..." class="px-3 py-2 rounded-xl lh-input" />
-              <input id="site-url" type="text" placeholder="https://..." class="px-3 py-2 rounded-xl lh-input font-mono-code" />
-              <input id="site-tagline" type="text" placeholder="Short description..." class="px-3 py-2 rounded-xl lh-input" />
-            </div>
-            <button onclick="window.Lighthouse.createCodedSite()" class="px-4 py-2 rounded-xl lh-btn-primary text-xs">+ Add Site</button>
-          </div>
-        </div>
-      `;
-    }
-
-    // =========================================================================
-    // STATION 8: THEMES & FILTERS (SETTINGS — CLEAN, NO SUPABASE/JSON CLUTTER)
-    // =========================================================================
-    function renderSettingsView() {
-      return `
-        <div class="space-y-6">
-          <!-- 4 GRAPHIC DESIGN COLOR THEMES -->
-          <div class="lh-surface rounded-2xl p-4 sm:p-6 space-y-4">
-            <div>
-              <span class="text-[11px] font-semibold uppercase tracking-wider lh-text-sec">60-30-10 Color Theory Palettes</span>
-              <h3 class="text-lg sm:text-xl font-bold lh-text-main mt-0.5">Lighthouse Appearance & Color Themes</h3>
-              <p class="text-xs lh-text-sec">Designed for calm legibility in both bright daylight and low-glare evening watch.</p>
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              ${COLOR_THEMES.map((t) => {
-                const isSelected = (state.settings.theme || 'nordic') === t.id;
-                return `
-                  <button onclick="window.Lighthouse.selectTheme('${t.id}')"
-                    class="p-4 rounded-2xl text-left transition flex flex-col justify-between gap-3 ${
-                      isSelected ? 'lh-btn-soft' : 'lh-elevated lh-text-main'
-                    }">
-                    <div class="space-y-1">
-                      <div class="flex items-center justify-between">
-                        <span class="font-bold text-sm lh-text-main">${escapeHtml(t.name)}</span>
-                        ${isSelected ? '<span class="text-[10px] font-bold px-2 py-0.5 rounded-full lh-badge">Active</span>' : ''}
-                      </div>
-                      <p class="text-xs lh-text-sec">${escapeHtml(t.subtitle)}</p>
-                    </div>
-                    <div class="flex items-center gap-2 pt-1">
-                      ${t.swatches
-                        .map(
-                          (hex) => `<span class="w-6 h-6 rounded-lg border border-white/20 shadow-sm" style="background-color: ${hex};"></span>`
-                        )
-                        .join('')}
-                    </div>
-                  </button>
-                `;
-              }).join('')}
-            </div>
-          </div>
-
-          <!-- CIRCADIAN ANCHORS & BIBLE STUDY LENS -->
-          <div class="lh-surface rounded-2xl p-4 sm:p-6 space-y-4">
-            <h3 class="text-base sm:text-lg font-bold lh-text-main">Circadian Daily Anchors & Scripture Lens</h3>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label class="text-xs font-semibold lh-text-sec block mb-1">Target Wake Time</label>
-                <input type="time" value="${escapeHtml(state.settings.wakeTime || '05:30')}"
-                  onchange="window.Lighthouse.updateSetting('wakeTime', this.value)"
-                  class="w-full px-3 py-2 rounded-xl lh-input font-mono-code" />
-              </div>
-              <div>
-                <label class="text-xs font-semibold lh-text-sec block mb-1">Target Sleep Time</label>
-                <input type="time" value="${escapeHtml(state.settings.sleepTime || '22:00')}"
-                  onchange="window.Lighthouse.updateSetting('sleepTime', this.value)"
-                  class="w-full px-3 py-2 rounded-xl lh-input font-mono-code" />
-              </div>
-              <div>
-                <label class="text-xs font-semibold lh-text-sec block mb-1">Default Bible Study Lens</label>
-                <select onchange="window.Lighthouse.updateSetting('studyLens', this.value)" class="w-full px-3 py-2 rounded-xl lh-input">
-                  <option value="BOTH" ${state.settings.studyLens === 'BOTH' ? 'selected' : ''}>Both NASB & NLT Lenses</option>
-                  <option value="NASB" ${state.settings.studyLens === 'NASB' ? 'selected' : ''}>NASB (Literal Structure)</option>
-                  <option value="NLT" ${state.settings.studyLens === 'NLT' ? 'selected' : ''}>NLT (Relational Heart)</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <!-- SHARED CALENDAR "FOG FILTER" (WIFE FILTER RULES) -->
-          <div class="lh-surface rounded-2xl p-4 sm:p-6 space-y-4">
-            <div class="flex items-center justify-between flex-wrap gap-2">
-              <div>
-                <h3 class="text-base sm:text-lg font-bold lh-text-main">Shared Calendar “Fog Filter” Rules</h3>
-                <p class="text-xs lh-text-sec">Automatically mutes personal reminders on shared calendars so your Watchtower only shows what matters to you.</p>
-              </div>
-              <button onclick="window.Lighthouse.toggleWifeFilter()"
-                class="px-3.5 py-2 rounded-xl text-xs font-semibold ${state.settings.wifeFilterEnabled ? 'lh-btn-primary' : 'lh-elevated lh-text-sec'}">
-                ${state.settings.wifeFilterEnabled ? 'Fog Filter: ON' : 'Fog Filter: OFF'}
-              </button>
-            </div>
-
-            <div class="flex flex-wrap gap-1.5">
-              ${(state.settings.wifeFilterKeywords || [])
-                .map(
-                  (kw) => `
-                  <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs lh-elevated lh-text-main">
-                    <span>${escapeHtml(kw)}</span>
-                    <button onclick="window.Lighthouse.removeFilterKeyword('${escapeHtml(kw)}')" class="lh-text-muted hover:lh-text-main">
-                      <i data-lucide="x" class="w-3 h-3"></i>
-                    </button>
-                  </span>
-                `
-                )
-                .join('')}
-            </div>
-
-            <div class="flex items-center gap-2 pt-1">
-              <input id="new-filter-kw" type="text" placeholder="Add muted keyword (e.g., remind, appt)..." class="flex-1 px-3 py-2 rounded-xl lh-input" />
-              <button onclick="window.Lighthouse.addFilterKeyword()" class="px-4 py-2 rounded-xl lh-btn-primary text-xs shrink-0">+ Add Keyword</button>
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    // =========================================================================
-    // REAL QR CODE GENERATOR ENGINE (SVG MATRIX + FALLBACK)
     // =========================================================================
     // ANALOG NIGHT WATCH & 3-HOLE BINDER PDF BUILDER ENGINE (INK-SAVER + SLIDERS)
     // =========================================================================
@@ -4546,6 +4356,49 @@
         state.prayerSubTab = sub;
         renderApp();
       },
+      handlePrayerCategoryChange(selectId, customInputId) {
+        const sel = document.getElementById(selectId);
+        const inp = document.getElementById(customInputId);
+        if (!sel || !inp) return;
+        if (sel.value === 'Custom Category...') {
+          inp.classList.remove('hidden');
+          inp.focus();
+        } else {
+          inp.classList.add('hidden');
+        }
+      },
+      resolvePrayerCategoryValue(selectId, customInputId) {
+        const selVal = document.getElementById(selectId)?.value || 'Other / General';
+        if (selVal === 'Custom Category...') {
+          const customVal = (document.getElementById(customInputId)?.value || '').trim();
+          return customVal || 'Other / General';
+        }
+        return selVal;
+      },
+      quickAddPrayerCard() {
+        const titleEl = document.getElementById('quick-pray-title');
+        const title = (titleEl?.value || '').trim();
+        if (!title) return showToast('Type a prayer request or name first.');
+        const category = this.resolvePrayerCategoryValue('quick-pray-cat', 'quick-pray-custom-cat');
+        const scriptureTag = (document.getElementById('quick-pray-ref')?.value || '').trim() || 'Philippians 4:6-7';
+        const notes = (document.getElementById('quick-pray-notes')?.value || '').trim() || 'Lifted up in prayer watch.';
+        const pinToBoard = document.getElementById('quick-pray-pin')?.checked !== false;
+
+        state.prayerCards.unshift({
+          id: `pc-${Date.now()}`,
+          title,
+          category,
+          scriptureTag,
+          notes,
+          prayedCount: 0,
+          lastPrayed: 'Added Today',
+          onActiveBoard: pinToBoard,
+          isAnswered: false
+        });
+        saveState();
+        renderApp();
+        showToast(pinToBoard ? `Pinned "${title}" (${category}) to your Prayer Board!` : `Added "${title}" to your Intercession Deck!`);
+      },
       prayForCard(cardId) {
         state.prayerCards = state.prayerCards.map((c) =>
           c.id === cardId ? { ...c, prayedCount: (c.prayedCount || 0) + 1, lastPrayed: 'Today' } : c
@@ -4571,10 +4424,11 @@
       },
       createPrayerCard() {
         const title = (document.getElementById('pray-title')?.value || '').trim();
-        if (!title) return;
-        const category = document.getElementById('pray-cat')?.value || 'Marriage & Family';
+        if (!title) return showToast('Enter a person or prayer target first.');
+        const category = this.resolvePrayerCategoryValue('pray-cat', 'pray-custom-cat');
         const scriptureTag = (document.getElementById('pray-ref')?.value || '').trim() || 'Philippians 4:6-7';
         const notes = (document.getElementById('pray-notes')?.value || '').trim();
+        const onActiveBoard = document.getElementById('pray-pin-toggle')?.checked !== false;
         state.prayerCards.unshift({
           id: `pc-${Date.now()}`,
           title,
@@ -4583,12 +4437,12 @@
           notes,
           prayedCount: 0,
           lastPrayed: 'New',
-          onActiveBoard: true,
+          onActiveBoard,
           isAnswered: false
         });
         saveState();
         renderApp();
-        showToast('Added & pinned new Prayer Card!');
+        showToast(`Added "${title}" (${category}) to Prayer Sanctuary!`);
       },
       addJesusThemeToBoard(themeId) {
         const t = JESUS_PRAYER_THEMES.find((i) => i.id === themeId);
@@ -4710,17 +4564,15 @@
         renderApp();
       },
       openQrModal(siteId) {
-        const site = state.codedSites.find((s) => s.id === siteId);
+        const site = (state.codedSites || []).find((s) => s.id === siteId);
         if (!site) return;
         activeQrSiteId = siteId;
         document.getElementById('qr-modal-title').textContent = site.title;
         const urlInput = document.getElementById('qr-modal-url-input');
         if (urlInput) urlInput.value = site.url;
-        document.getElementById('qr-svg-box').innerHTML = `
-          <div class="bg-white p-3 rounded-2xl shadow-inner inline-block w-48 h-48 flex items-center justify-center">
-            ${generateRealQrSvg(site.url)}
-          </div>
-        `;
+        const openLink = document.getElementById('qr-modal-open-link');
+        if (openLink) openLink.href = site.url;
+        document.getElementById('qr-svg-box').innerHTML = renderQrModalGraphicHtml(site.url);
         const modal = document.getElementById('qr-modal');
         modal.classList.remove('hidden');
         modal.classList.add('flex');
@@ -4730,13 +4582,11 @@
         if (!activeQrSiteId) return;
         state.codedSites = state.codedSites.map((s) => (s.id === activeQrSiteId ? { ...s, url: newUrl } : s));
         saveState();
+        const openLink = document.getElementById('qr-modal-open-link');
+        if (openLink) openLink.href = newUrl;
         const box = document.getElementById('qr-svg-box');
         if (box) {
-          box.innerHTML = `
-            <div class="bg-white p-3 rounded-2xl shadow-inner inline-block w-48 h-48 flex items-center justify-center">
-              ${generateRealQrSvg(newUrl)}
-            </div>
-          `;
+          box.innerHTML = renderQrModalGraphicHtml(newUrl);
         }
       },
       copyQrModalUrl() {
