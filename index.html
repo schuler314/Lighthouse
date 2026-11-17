@@ -320,7 +320,7 @@
           </div>
           <div>
             <h3 class="font-bold text-base lh-text-main">Google Calendar Sync</h3>
-            <p class="text-xs lh-text-sec">Read-Only OAuth 2.0 or Instant .ICS File Load</p>
+            <p class="text-xs lh-text-sec">Live OAuth 2.0 (Primary, Family & Regla’s Calendars)</p>
           </div>
         </div>
         <button onclick="window.Lighthouse.closeGcalModal()" class="p-2 rounded-xl lh-elevated lh-text-sec">
@@ -331,14 +331,26 @@
       <div class="p-4 rounded-2xl lh-elevated space-y-3">
         <div class="flex items-center justify-between">
           <span class="text-xs font-bold uppercase tracking-wider" style="color: var(--accent-primary);">Option 1: Live Google OAuth</span>
-          <span id="gcal-token-badge" class="text-[11px] px-2 py-0.5 rounded-full lh-badge-sec font-medium">RAM-Only Token</span>
+          <span id="gcal-token-badge" class="text-[11px] px-2 py-0.5 rounded-full lh-badge-sec font-medium">Client ID Pre-Loaded</span>
         </div>
         <p class="text-xs lh-text-sec leading-relaxed">
-          Pulls live events from your Primary, Family, and Regla's shared calendars and applies your Fog Filter rules.
+          Pulls live events from your Primary (`schuler314`), Family, and Regla's shared calendars (`regla317` & `reglaschuler`) and applies your keyword Fog Filter rules.
         </p>
-        <input id="input-gcal-client-id" type="text" placeholder="Paste Google Web OAuth Client ID..."
-          oninput="window.Lighthouse.updateSetting('gcalClientId', this.value)"
-          class="w-full px-3 py-2.5 rounded-xl lh-input font-mono-code" />
+        <div class="space-y-1">
+          <label class="text-[11px] font-semibold lh-text-sec block">Google Web OAuth Client ID:</label>
+          <input id="input-gcal-client-id" type="text" placeholder="Paste Google Web OAuth Client ID..."
+            oninput="window.Lighthouse.updateSetting('gcalClientId', this.value)"
+            class="w-full px-3 py-2.5 rounded-xl lh-input font-mono-code text-xs" />
+        </div>
+
+        <!-- Origin Helper for Google Cloud Console -->
+        <div class="p-2.5 rounded-xl lh-surface text-[11px] space-y-1">
+          <div class="flex items-center justify-between gap-2">
+            <span class="font-semibold lh-text-sec">Required "Authorized JavaScript origin" in Google Cloud:</span>
+            <button onclick="navigator.clipboard?.writeText(window.location.origin); window.Lighthouse.showOriginCopied();" class="px-2 py-0.5 rounded lh-btn-soft text-[10px]">Copy Origin</button>
+          </div>
+          <code id="gcal-current-origin" class="block font-mono-code text-xs lh-text-main break-all"></code>
+        </div>
 
         <label class="flex items-center justify-between p-2.5 rounded-xl lh-surface cursor-pointer">
           <div>
@@ -348,10 +360,13 @@
           <input id="toggle-gcal-readonly" type="checkbox" onchange="window.Lighthouse.updateSetting('gcalReadOnlyScope', this.checked)" class="w-4 h-4" />
         </label>
 
-        <button onclick="window.Lighthouse.connectGoogleOAuth()" class="w-full py-3 rounded-xl lh-btn-primary text-xs sm:text-sm flex items-center justify-center gap-2">
+        <button onclick="window.Lighthouse.connectGoogleOAuth()" class="w-full py-3 rounded-xl lh-btn-primary text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md">
           <i data-lucide="refresh-cw" class="w-4 h-4"></i>
-          <span>Sign In & Sync Calendars</span>
+          <span>Sign In & Sync All Calendars Now</span>
         </button>
+
+        <!-- Live Sync Diagnostics & Per-Calendar Breakdown -->
+        <div id="gcal-sync-diagnostics" class="p-3 rounded-xl lh-surface text-xs space-y-1.5 hidden"></div>
       </div>
 
       <div class="p-4 rounded-2xl lh-elevated space-y-2.5">
@@ -1425,11 +1440,12 @@
         sleepTime: '22:00',
         maxActiveGoals: 3,
         wifeFilterEnabled: true,
-        hideShortSoloEvents: true,
+        hideShortSoloEvents: false,
         wifeFilterKeywords: ['dotti', 'musora', 'cancel', 'breakfast w/', 'advisement', 'remind', 'hair', 'nails', 'personal', 'rx'],
-        gcalClientId: '',
+        gcalClientId: '974855148969-n2ejn4qosb4oreulnjljnijmkrm2lfnl.apps.googleusercontent.com',
         gcalReadOnlyScope: true,
-        lastGcalSync: 'Nov 2026 Snapshot'
+        lastGcalSync: 'Nov 2026 Snapshot',
+        lastCalendarSummary: []
       },
 
       gcalEvents: [
@@ -1730,6 +1746,19 @@
         const parsed = JSON.parse(raw);
         // Upgrade legacy placeholder URLs if present so real QR codes work immediately
         const hasLegacySites = (parsed.codedSites || []).some((s) => (s.url || '').includes('example.com'));
+        const mergedSettings = {
+          ...INITIAL_STATE.settings,
+          ...(parsed.settings || {})
+        };
+        // Ensure the user's Google OAuth Client ID is pre-populated if previously blank
+        if (!mergedSettings.gcalClientId || !mergedSettings.gcalClientId.trim()) {
+          mergedSettings.gcalClientId = INITIAL_STATE.settings.gcalClientId;
+        }
+        // Fix legacy bug where hideShortSoloEvents muted all shared calendar events without attendees
+        if (parsed.settings?.hideShortSoloEvents === true && !parsed.settings?.soloEventsRuleMigrated) {
+          mergedSettings.hideShortSoloEvents = false;
+          mergedSettings.soloEventsRuleMigrated = true;
+        }
         return {
           ...structuredClone(INITIAL_STATE),
           ...parsed,
@@ -1739,7 +1768,7 @@
             : structuredClone(INITIAL_STATE.dailyHistory),
           backtrackDate: parsed.backtrackDate || TODAY_ISO,
           codedSites: hasLegacySites ? structuredClone(INITIAL_STATE.codedSites) : (parsed.codedSites || structuredClone(INITIAL_STATE.codedSites)),
-          settings: { ...INITIAL_STATE.settings, ...(parsed.settings || {}) },
+          settings: mergedSettings,
           pdfConfig: { ...INITIAL_STATE.pdfConfig, ...(parsed.pdfConfig || {}) }
         };
       } catch {
@@ -1849,11 +1878,11 @@
 
     function isEventMuted(ev) {
       if (!state.settings.wifeFilterEnabled) return false;
-      const isWife = (ev.calendar || '').toLowerCase().includes('wife');
+      const calLower = (ev.calendar || '').toLowerCase();
+      const isWife = calLower.includes('wife') || calLower.includes('regla');
       if (!isWife) return false;
-      if (state.settings.hideShortSoloEvents && ev.isSoloReminder) return true;
       const titleLower = (ev.title || '').toLowerCase();
-      return (state.settings.wifeFilterKeywords || []).some((kw) => titleLower.includes(kw.toLowerCase()));
+      return (state.settings.wifeFilterKeywords || []).some((kw) => kw && titleLower.includes(kw.toLowerCase()));
     }
 
     // =========================================================================
@@ -2071,17 +2100,26 @@
               ${unified
                 .map((item) => {
                   if (item.streamType === 'gcal_event') {
+                    const isWifeCal = (item.calendar || '').toLowerCase().includes('wife') || (item.calendar || '').toLowerCase().includes('regla');
                     return `
                       <div class="p-3.5 rounded-xl lh-elevated flex items-center justify-between gap-3 ${item.isMuted ? 'opacity-60' : ''}">
                         <div class="min-w-0">
-                          <div class="flex items-center gap-2 text-xs">
+                          <div class="flex items-center gap-2 text-xs flex-wrap">
                             <span class="font-mono-code font-semibold" style="color: var(--secondary-accent);">${escapeHtml(item.startTime)} – ${escapeHtml(item.endTime)}</span>
-                            <span class="text-[10px] px-2 py-0.5 rounded-full lh-badge-sec font-semibold">Calendar Anchor</span>
+                            ${item.dateStr && state.selectedDayOffset === 2 ? `<span class="text-[10px] font-mono-code px-2 py-0.5 rounded lh-surface lh-text-main">${escapeHtml(item.dateStr)}</span>` : ''}
+                            <span class="text-[10px] px-2 py-0.5 rounded-full lh-badge-sec font-semibold">${escapeHtml(item.calendar || 'Calendar Anchor')}</span>
                             ${item.isMuted ? '<span class="text-[10px] px-2 py-0.5 rounded-full lh-badge">Muted by Fog Filter</span>' : ''}
                           </div>
                           <p class="font-semibold text-sm lh-text-main mt-1">${escapeHtml(item.title)}</p>
-                          <p class="text-xs lh-text-sec truncate">${escapeHtml(item.calendar)} ${item.location ? '• ' + escapeHtml(item.location) : ''}</p>
+                          ${item.location ? `<p class="text-xs lh-text-sec truncate">📍 ${escapeHtml(item.location)}</p>` : ''}
                         </div>
+                        ${
+                          isWifeCal && !item.isMuted
+                            ? `<button onclick="window.Lighthouse.quickMuteEventTitle('${escapeHtml(item.title)}')" class="px-2.5 py-1 rounded-lg lh-surface text-[10px] font-semibold lh-text-sec hover:lh-text-main shrink-0" title="Mute reminders like this">
+                                Mute
+                              </button>`
+                            : ''
+                        }
                       </div>
                     `;
                   }
@@ -6085,24 +6123,78 @@
         const modal = document.getElementById('gcal-modal');
         const input = document.getElementById('input-gcal-client-id');
         const toggle = document.getElementById('toggle-gcal-readonly');
-        if (input) input.value = state.settings.gcalClientId || '';
+        const originEl = document.getElementById('gcal-current-origin');
+        if ( !state.settings.gcalClientId ) {
+          state.settings.gcalClientId = INITIAL_STATE.settings.gcalClientId;
+        }
+        if (input) input.value = state.settings.gcalClientId;
         if (toggle) toggle.checked = state.settings.gcalReadOnlyScope !== false;
+        if (originEl) originEl.textContent = window.location.origin;
+        this.renderGcalDiagnostics();
         modal.classList.remove('hidden');
         modal.classList.add('flex');
+        if (window.lucide) window.lucide.createIcons();
       },
       closeGcalModal() {
         const modal = document.getElementById('gcal-modal');
         modal.classList.add('hidden');
         modal.classList.remove('flex');
       },
+      showOriginCopied() {
+        showToast(`Copied origin: ${window.location.origin}`);
+      },
+      quickMuteEventTitle(title) {
+        const clean = (title || '').trim().toLowerCase();
+        if (!clean) return;
+        state.settings.wifeFilterKeywords = Array.from(new Set([...(state.settings.wifeFilterKeywords || []), clean]));
+        saveState();
+        renderApp();
+        showToast(`Muted "${title}" via Fog Filter!`);
+      },
+      renderGcalDiagnostics(statusHtml = '') {
+        const box = document.getElementById('gcal-sync-diagnostics');
+        if (!box) return;
+        const summary = state.settings.lastCalendarSummary || [];
+        if (!statusHtml && summary.length === 0) {
+          box.classList.add('hidden');
+          return;
+        }
+        box.classList.remove('hidden');
+        box.innerHTML = `
+          ${statusHtml ? `<div class="pb-1.5 border-b lh-border">${statusHtml}</div>` : ''}
+          ${
+            summary.length > 0
+              ? `<div class="space-y-1 pt-1">
+                  <span class="text-[10px] font-bold uppercase tracking-wider lh-text-sec block">Last Synced Calendars (${escapeHtml(state.settings.lastGcalSync || 'Live')}):</span>
+                  ${summary
+                    .map(
+                      (c) => `
+                      <div class="flex items-center justify-between text-[11px]">
+                        <span class="font-medium lh-text-main truncate">${escapeHtml(c.label)}</span>
+                        <span class="font-mono-code px-1.5 py-0.5 rounded lh-elevated lh-text-sec shrink-0">${c.count} events</span>
+                      </div>
+                    `
+                    )
+                    .join('')}
+                </div>`
+              : ''
+          }
+        `;
+      },
       async connectGoogleOAuth() {
-        const clientId = (state.settings.gcalClientId || '').trim();
+        const inputEl = document.getElementById('input-gcal-client-id');
+        if (inputEl && inputEl.value.trim()) {
+          state.settings.gcalClientId = inputEl.value.trim();
+          saveState();
+        }
+        const clientId = (state.settings.gcalClientId || INITIAL_STATE.settings.gcalClientId).trim();
         if (!clientId) return showToast('Paste your Google Web OAuth Client ID first.');
         const scope =
           state.settings.gcalReadOnlyScope !== false
             ? 'https://www.googleapis.com/auth/calendar.readonly'
             : 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events';
         try {
+          this.renderGcalDiagnostics('<span class="text-amber-400 font-semibold">Opening Google Sign-In window...</span>');
           if (!window.google?.accounts?.oauth2) {
             await new Promise((res, rej) => {
               const s = document.createElement('script');
@@ -6116,36 +6208,98 @@
             client_id: clientId,
             scope,
             callback: async (resp) => {
+              if (resp?.error) {
+                this.renderGcalDiagnostics(
+                  `<span class="text-rose-400 font-bold">OAuth Error: ${escapeHtml(resp.error)}</span>
+                   <p class="text-[11px] lh-text-sec mt-1">Make sure <strong>${escapeHtml(window.location.origin)}</strong> is added under "Authorized JavaScript origins" in Google Cloud Console, and your email is added under "Test users".</p>`
+                );
+                return showToast(`Google OAuth error: ${resp.error}`);
+              }
               if (resp?.access_token) {
                 gcalAccessToken = resp.access_token;
+                const badge = document.getElementById('gcal-token-badge');
+                if (badge) badge.textContent = 'Connected (Live)';
                 await this.fetchLiveGoogleEvents(gcalAccessToken);
-                this.closeGcalModal();
               }
             }
           });
-          client.requestAccessToken({ prompt: 'consent' });
-        } catch {
+          client.requestAccessToken({ prompt: '' });
+        } catch (err) {
+          this.renderGcalDiagnostics(
+            `<span class="text-rose-400 font-bold">Could not load Google OAuth client: ${escapeHtml(err?.message || 'Check connection')}</span>`
+          );
           showToast('Could not start Google OAuth flow.');
         }
       },
       async fetchLiveGoogleEvents(token) {
         try {
-          const listRes = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
-            headers: { Authorization: `Bearer ${token}` }
-          });
+          this.renderGcalDiagnostics('<span class="text-amber-400 font-semibold">Fetching Primary, Family & Regla’s shared calendars...</span>');
+          const listRes = await fetch(
+            'https://www.googleapis.com/calendar/v3/users/me/calendarList?showHidden=true&minAccessRole=freeBusyReader',
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
           const listData = await listRes.json();
+
+          if (!listRes.ok) {
+            const apiMsg = listData?.error?.message || `HTTP ${listRes.status}`;
+            this.renderGcalDiagnostics(
+              `<span class="text-rose-400 font-bold">Google Calendar API Error: ${escapeHtml(apiMsg)}</span>
+               <p class="text-[11px] lh-text-sec mt-1">Ensure the <strong>Google Calendar API</strong> is enabled in your Google Cloud project (APIs & Services → Library → Google Calendar API → Enable).</p>`
+            );
+            return showToast(`Calendar API Error: ${apiMsg}`);
+          }
+
+          // Combine discovered calendars with explicit known fallback IDs for Regla & Family
+          const discovered = Array.isArray(listData.items) ? listData.items : [];
+          const knownFallbacks = [
+            { id: 'primary', summary: 'Primary (Dan)', primary: true },
+            { id: 'regla317@gmail.com', summary: 'Regla (regla317)' },
+            { id: 'reglaschuler@gmail.com', summary: 'Regla (reglaschuler)' },
+            { id: 'family13652773781709440206@group.calendar.google.com', summary: 'Family Calendar' }
+          ];
+
+          const seenIds = new Set();
+          const calendarsToQuery = [];
+
+          for (const cal of [...discovered, ...knownFallbacks]) {
+            if (!cal?.id) continue;
+            // Skip generic holiday/weather/sports feed calendars so the stream stays clean
+            if (cal.id.includes('#holiday@') || cal.id.includes('#weather@') || cal.id.includes('#sports@') || cal.id.includes('#contacts@')) {
+              continue;
+            }
+            const normId = cal.primary ? 'primary' : cal.id.toLowerCase();
+            if (cal.primary) seenIds.add((cal.id || '').toLowerCase());
+            if (seenIds.has(normId)) continue;
+            seenIds.add(normId);
+            calendarsToQuery.push(cal);
+          }
+
           const now = new Date();
           const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-          const endHorizon = new Date(startOfToday.getTime() + 7 * 86400000);
+          const endHorizon = new Date(startOfToday.getTime() + 14 * 86400000);
           const events = [];
+          const calendarSummary = [];
 
-          for (const cal of listData.items || []) {
+          // Helper to parse Google date or dateTime in LOCAL timezone without UTC-shift bug
+          const parseGoogleDateLocal = (dtObj) => {
+            if (!dtObj) return null;
+            if (dtObj.dateTime) {
+              return new Date(dtObj.dateTime);
+            }
+            if (dtObj.date) {
+              const [y, m, d] = dtObj.date.split('-').map(Number);
+              return new Date(y, m - 1, d, 8, 0, 0);
+            }
+            return null;
+          };
+
+          for (const cal of calendarsToQuery) {
             const params = new URLSearchParams({
               timeMin: startOfToday.toISOString(),
               timeMax: endHorizon.toISOString(),
               singleEvents: 'true',
               orderBy: 'startTime',
-              maxResults: '50'
+              maxResults: '100'
             });
             const evRes = await fetch(
               `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cal.id)}/events?${params}`,
@@ -6153,36 +6307,64 @@
             );
             if (!evRes.ok) continue;
             const evData = await evRes.json();
-            const isWife = (cal.summary || '').toLowerCase().includes('regla') || cal.accessRole === 'reader';
-            const calLabel = isWife ? `Wife Shared (${cal.summary || 'Shared'})` : cal.primary ? 'Primary' : cal.summary;
+
+            const rawName = `${cal.summaryOverride || ''} ${cal.summary || ''} ${cal.id || ''}`.toLowerCase();
+            const isWife = rawName.includes('regla') || rawName.includes('wife');
+            const isFamily = rawName.includes('family');
+            const calLabel = isWife
+              ? `Wife Shared (${cal.summaryOverride || cal.summary || cal.id.split('@')[0]})`
+              : isFamily
+              ? 'Family Calendar'
+              : cal.primary || rawName.includes('schuler314')
+              ? 'Primary (Dan)'
+              : cal.summaryOverride || cal.summary || cal.id;
+
+            let calEventCount = 0;
 
             for (const item of evData.items || []) {
               if (item.status === 'cancelled') continue;
-              const rawStart = item.start?.dateTime || item.start?.date;
-              if (!rawStart) continue;
-              const startD = new Date(rawStart);
+              const startD = parseGoogleDateLocal(item.start);
+              if (!startD) continue;
+              const endD = parseGoogleDateLocal(item.end) || startD;
+
               const dayMid = new Date(startD.getFullYear(), startD.getMonth(), startD.getDate());
-              const dayOffset = Math.max(0, Math.round((dayMid - startOfToday) / 86400000));
+              const dayOffset = Math.round((dayMid - startOfToday) / 86400000);
+              if (dayOffset < 0) continue; // Ignore already-ended yesterday events
+
               const isAllDay = Boolean(item.start?.date && !item.start?.dateTime);
+              const dateStr = `${dayMid.getFullYear()}-${String(dayMid.getMonth() + 1).padStart(2, '0')}-${String(dayMid.getDate()).padStart(2, '0')}`;
+
               events.push({
-                id: `gcal-${item.id}`,
+                id: `gcal-${cal.id}-${item.id}`,
                 dayOffset,
+                dateStr,
                 startTime: isAllDay ? '08:00' : startD.toTimeString().slice(0, 5),
-                endTime: isAllDay ? 'All Day' : new Date(item.end?.dateTime || startD).toTimeString().slice(0, 5),
-                title: item.summary || '(Untitled)',
+                endTime: isAllDay ? 'All Day' : endD.toTimeString().slice(0, 5),
+                title: item.summary || '(Busy / No Title)',
                 calendar: calLabel,
-                isSoloReminder: isWife && (item.attendees || []).length <= 1,
+                isSoloReminder: false,
                 location: item.location || ''
               });
+              calEventCount++;
             }
+
+            calendarSummary.push({ label: calLabel, count: calEventCount });
           }
-          if (events.length > 0) {
-            state.gcalEvents = events;
-            saveState();
-            renderApp();
-            showToast(`Synced ${events.length} live Google Calendar events!`);
-          }
-        } catch {
+
+          events.sort((a, b) => a.dayOffset - b.dayOffset || a.startTime.localeCompare(b.startTime));
+          state.gcalEvents = events;
+          state.settings.lastGcalSync = `Live Sync • ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+          state.settings.lastCalendarSummary = calendarSummary;
+          saveState();
+          renderApp();
+          this.renderGcalDiagnostics(
+            `<span style="color: var(--success-accent);" class="font-bold">✓ Synced ${events.length} upcoming events across ${calendarSummary.length} calendars!</span>`
+          );
+          showToast(`Synced ${events.length} live events across your & Regla’s calendars!`);
+        } catch (err) {
+          this.renderGcalDiagnostics(
+            `<span class="text-rose-400 font-bold">Sync Exception: ${escapeHtml(err?.message || 'Unknown error')}</span>`
+          );
           showToast('Error fetching live Google Calendar events.');
         }
       },
