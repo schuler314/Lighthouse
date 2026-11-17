@@ -536,6 +536,10 @@
             <span class="hidden sm:inline">Night PDF</span>
           </button>
 
+          <button onclick="window.Lighthouse.setTab('workouts')" class="p-2 rounded-xl lh-elevated lh-text-sec hover:lh-text-main" title="Training & Workouts Planner">
+            <i data-lucide="dumbbell" class="w-4 h-4"></i>
+          </button>
+
           <button onclick="window.Lighthouse.setTab('launchpad')" class="p-2 rounded-xl lh-elevated lh-text-sec hover:lh-text-main" title="Fleet Dock (Coded Sites)">
             <i data-lucide="layout-grid" class="w-4 h-4"></i>
           </button>
@@ -1280,6 +1284,40 @@
     // =========================================================================
     // DEFAULT APPLICATION STATE
     // =========================================================================
+    function getLocalIsoDate(offsetDays = 0) {
+      const d = new Date();
+      d.setDate(d.getDate() + offsetDays);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    function getDayOffsetFromIsoDate(dateStr) {
+      if (!dateStr) return 0;
+      const [y, m, d] = dateStr.split('-').map(Number);
+      if (!y || !m || !d) return 0;
+      const target = new Date(y, m - 1, d);
+      const now = new Date();
+      const todayMid = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      return Math.round((target - todayMid) / 86400000);
+    }
+
+    const TODAY_ISO = getLocalIsoDate(0);
+    const YESTERDAY_ISO = getLocalIsoDate(-1);
+    const TOMORROW_ISO = getLocalIsoDate(1);
+
+    const WORKOUT_MODALITIES = [
+      'Indoor Spinning',
+      'Outdoor Cycling (Road)',
+      'Outdoor Cycling (Single-Track)',
+      'Lifting (Video-Led)',
+      'Pilates / Mobility',
+      'Yoga',
+      'Walking',
+      'Custom / Other...'
+    ];
+
     const INITIAL_STATE = {
       activeTab: 'calendar',
       selectedDayOffset: 0,
@@ -1287,6 +1325,82 @@
       mobilePlanViewMode: 'unified',
       planLocked: false,
       dailyAmccScore: 7,
+
+      // Workout & Daily Backtrack State
+      workoutFilterModality: 'All',
+      backtrackDate: TODAY_ISO,
+      workouts: [
+        {
+          id: 'wk-1',
+          date: TODAY_ISO,
+          startTime: '06:00',
+          durationMins: 40,
+          modality: 'Indoor Spinning',
+          title: 'Zone 2 Endurance + 4x2m Tempo Cadence Spins',
+          videoOrRoute: 'Peloton / Zwift Watopia Flat Route',
+          intensity: 'Moderate-High',
+          notes: '30m Wake-to-Workout ramp complete before clipping in.',
+          completed: true
+        },
+        {
+          id: 'wk-2',
+          date: TODAY_ISO,
+          startTime: '17:00',
+          durationMins: 20,
+          modality: 'Pilates / Mobility',
+          title: 'Evening Thoracic, Hip Capsule & Tendon Decompression',
+          videoOrRoute: 'Mat Routine',
+          intensity: 'Recovery',
+          notes: 'Unload lower back and hips after desk work.',
+          completed: false
+        },
+        {
+          id: 'wk-3',
+          date: TOMORROW_ISO,
+          startTime: '06:00',
+          durationMins: 45,
+          modality: 'Lifting (Video-Led)',
+          title: 'Full-Body Dumbbell & Isometric Tendon Strength',
+          videoOrRoute: '35m Guided Strength Video',
+          intensity: 'High',
+          notes: 'Focus on controlled eccentric tempo and scapular stability.',
+          completed: false
+        },
+        {
+          id: 'wk-4',
+          date: YESTERDAY_ISO,
+          startTime: '07:30',
+          durationMins: 75,
+          modality: 'Outdoor Cycling (Single-Track)',
+          title: 'Morning Single-Track Trail Flow & Technical Climbs',
+          videoOrRoute: 'Local Trail System',
+          intensity: 'High',
+          notes: 'Great traction; felt strong on punchy climbs.',
+          completed: true
+        }
+      ],
+
+      dailyHistory: {
+        [TODAY_ISO]: {
+          prayerDone: true,
+          nightDone: false,
+          morningDone: true,
+          todos: [
+            { id: 'dh-1', text: 'Complete 30-Min Wake-to-Workout Ramp', completed: true },
+            { id: 'dh-2', text: 'Check slim computer status with Shannon', completed: false }
+          ]
+        },
+        [YESTERDAY_ISO]: {
+          prayerDone: true,
+          nightDone: true,
+          morningDone: true,
+          todos: [
+            { id: 'dh-3', text: 'Prep church safety team schedule & gear', completed: true },
+            { id: 'dh-4', text: 'Stage morning workout clothes & hydration', completed: true },
+            { id: 'dh-5', text: 'Inspect yard drainage around young trees', completed: true }
+          ]
+        }
+      },
 
       // Sub-filters & active boards
       morningCategoryFilter: 'All',
@@ -1619,6 +1733,11 @@
         return {
           ...structuredClone(INITIAL_STATE),
           ...parsed,
+          workouts: Array.isArray(parsed.workouts) ? parsed.workouts : structuredClone(INITIAL_STATE.workouts),
+          dailyHistory: parsed.dailyHistory && typeof parsed.dailyHistory === 'object'
+            ? parsed.dailyHistory
+            : structuredClone(INITIAL_STATE.dailyHistory),
+          backtrackDate: parsed.backtrackDate || TODAY_ISO,
           codedSites: hasLegacySites ? structuredClone(INITIAL_STATE.codedSites) : (parsed.codedSites || structuredClone(INITIAL_STATE.codedSites)),
           settings: { ...INITIAL_STATE.settings, ...(parsed.settings || {}) },
           pdfConfig: { ...INITIAL_STATE.pdfConfig, ...(parsed.pdfConfig || {}) }
@@ -1626,6 +1745,20 @@
       } catch {
         return structuredClone(INITIAL_STATE);
       }
+    }
+
+    function ensureDailyLog(dateStr) {
+      const target = dateStr || getLocalIsoDate(0);
+      if (!state.dailyHistory) state.dailyHistory = {};
+      if (!state.dailyHistory[target]) {
+        state.dailyHistory[target] = {
+          prayerDone: false,
+          nightDone: false,
+          morningDone: false,
+          todos: []
+        };
+      }
+      return state.dailyHistory[target];
     }
 
     function saveState() {
@@ -1728,11 +1861,12 @@
     // =========================================================================
     const NAV_STATIONS = [
       { id: 'calendar', label: 'Watchtower (24h)', shortLabel: '24h Watch', icon: 'compass' },
+      { id: 'workouts', label: 'Training & Workouts', shortLabel: 'Workouts', icon: 'dumbbell' },
       { id: 'lists', label: 'Harbor Wall Lists', shortLabel: 'Lists', icon: 'check-square' },
       { id: 'morning', label: 'Morning Watch & Rest', shortLabel: 'Morning', icon: 'sun' },
       { id: 'night', label: 'Night Watch & Log', shortLabel: 'Night', icon: 'moon' },
       { id: 'prayer', label: 'Prayer Sanctuary', shortLabel: 'Prayer', icon: 'heart' },
-      { id: 'goals', label: 'Charted Course', shortLabel: 'Goals', icon: 'target' },
+      { id: 'goals', label: 'Charted Course & Log', shortLabel: 'Course & Log', icon: 'target' },
       { id: 'launchpad', label: 'Fleet Dock (Sites)', shortLabel: 'Sites', icon: 'layout-grid' },
       { id: 'settings', label: 'Themes & Filters', shortLabel: 'Settings', icon: 'sliders-horizontal' }
     ];
@@ -1794,10 +1928,10 @@
       if (mobileBottom) {
         const dockItems = [
           { id: 'calendar', label: 'Watch', icon: 'compass' },
+          { id: 'workouts', label: 'Workouts', icon: 'dumbbell' },
           { id: 'lists', label: 'Lists', icon: 'check-square' },
-          { id: 'morning', label: 'Morning', icon: 'sun' },
-          { id: 'night', label: 'Night', icon: 'moon' },
-          { id: 'prayer', label: 'Prayer', icon: 'heart' }
+          { id: 'prayer', label: 'Prayer', icon: 'heart' },
+          { id: 'goals', label: 'Course', icon: 'target' }
         ];
         mobileBottom.innerHTML =
           dockItems
@@ -1817,7 +1951,7 @@
           `
             <button onclick="window.Lighthouse.toggleMobileDrawer(true)"
               class="flex flex-col items-center justify-center py-1.5 rounded-xl text-[11px] font-semibold transition ${
-                ['goals', 'launchpad', 'settings'].includes(state.activeTab) ? 'lh-badge' : 'lh-text-sec'
+                ['morning', 'night', 'launchpad', 'settings'].includes(state.activeTab) ? 'lh-badge' : 'lh-text-sec'
               }">
               <i data-lucide="menu" class="w-4 h-4 mb-0.5"></i>
               <span>More</span>
@@ -1852,12 +1986,21 @@
         .filter((b) => b.dayOffset === dayFilter)
         .map((b) => ({ ...b, streamType: 'plan_block', sortTime: b.startTime || '08:00' }));
 
+      const workoutItems = (state.workouts || [])
+        .map((w) => ({ ...w, computedOffset: getDayOffsetFromIsoDate(w.date) }))
+        .filter((w) => (state.selectedDayOffset === 2 ? w.computedOffset >= 2 : w.computedOffset === state.selectedDayOffset))
+        .map((w) => ({
+          ...w,
+          streamType: 'workout_event',
+          sortTime: w.startTime || '06:00'
+        }));
+
       const calItems = (state.gcalEvents || [])
         .filter((ev) => (state.selectedDayOffset === 2 ? ev.dayOffset >= 2 : ev.dayOffset === state.selectedDayOffset))
         .filter((ev) => state.peekFilteredEvents || !isEventMuted(ev))
         .map((ev) => ({ ...ev, streamType: 'gcal_event', isMuted: isEventMuted(ev), sortTime: ev.startTime || '08:00' }));
 
-      const unified = [...calItems, ...planItems].sort((a, b) => a.sortTime.localeCompare(b.sortTime));
+      const unified = [...calItems, ...workoutItems, ...planItems].sort((a, b) => a.sortTime.localeCompare(b.sortTime));
 
       return `
         <div class="space-y-5">
@@ -1909,11 +2052,14 @@
             <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b lh-border">
               <div>
                 <h4 class="font-bold text-sm sm:text-base lh-text-main">Chronological Watch Stream (${unified.length})</h4>
-                <p class="text-xs lh-text-sec">Filtered Google Calendar anchors interleaved with your active routines & tasks</p>
+                <p class="text-xs lh-text-sec">Filtered Google Calendar anchors interleaved with your scheduled workouts, routines & tasks</p>
               </div>
               <div class="flex flex-wrap gap-1.5">
                 <button onclick="window.Lighthouse.openPdfBuilder()" class="px-2.5 py-1 rounded-lg lh-btn-soft text-xs font-semibold flex items-center gap-1">
                   <i data-lucide="printer" class="w-3.5 h-3.5"></i> Print Tonight’s Plan & Log
+                </button>
+                <button onclick="window.Lighthouse.setTab('workouts')" class="px-2.5 py-1 rounded-lg lh-btn-primary text-xs font-semibold flex items-center gap-1">
+                  <i data-lucide="dumbbell" class="w-3.5 h-3.5"></i> + Schedule Workout
                 </button>
                 <button onclick="window.Lighthouse.setTab('morning')" class="px-2.5 py-1 rounded-lg lh-elevated text-xs font-medium lh-text-sec hover:lh-text-main">+ Morning Ramp</button>
                 <button onclick="window.Lighthouse.setTab('night')" class="px-2.5 py-1 rounded-lg lh-elevated text-xs font-medium lh-text-sec hover:lh-text-main">+ Night Watch</button>
@@ -1936,6 +2082,35 @@
                           <p class="font-semibold text-sm lh-text-main mt-1">${escapeHtml(item.title)}</p>
                           <p class="text-xs lh-text-sec truncate">${escapeHtml(item.calendar)} ${item.location ? '• ' + escapeHtml(item.location) : ''}</p>
                         </div>
+                      </div>
+                    `;
+                  }
+
+                  if (item.streamType === 'workout_event') {
+                    return `
+                      <div class="p-3.5 rounded-xl lh-surface border-l-4 flex items-center justify-between gap-3 ${item.completed ? 'opacity-60' : ''}" style="border-left-color: var(--success-accent);">
+                        <div class="flex items-center gap-3 min-w-0">
+                          <button onclick="window.Lighthouse.toggleWorkoutCompleted('${item.id}')"
+                            class="w-6 h-6 rounded-lg flex items-center justify-center border lh-border shrink-0"
+                            style="${item.completed ? 'background-color: var(--success-accent); color: var(--accent-contrast);' : ''}">
+                            ${item.completed ? '<i data-lucide="check" class="w-4 h-4"></i>' : ''}
+                          </button>
+                          <div class="min-w-0">
+                            <div class="flex items-center gap-2 flex-wrap">
+                              <span class="font-mono-code text-xs font-semibold" style="color: var(--success-accent);">${escapeHtml(item.startTime)}</span>
+                              <span class="text-xs lh-text-muted">${item.durationMins}m</span>
+                              <span class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full lh-badge-success font-bold">
+                                🏋️ ${escapeHtml(item.modality)}
+                              </span>
+                              ${item.computedOffset >= 2 ? `<span class="text-[10px] font-mono-code lh-text-sec">${escapeHtml(item.date)}</span>` : ''}
+                            </div>
+                            <p class="text-sm font-bold lh-text-main mt-0.5 ${item.completed ? 'line-through lh-text-muted' : ''}">${escapeHtml(item.title)}</p>
+                            ${item.videoOrRoute || item.notes ? `<p class="text-xs lh-text-sec truncate">${escapeHtml(item.videoOrRoute || '')} ${item.notes ? '• ' + escapeHtml(item.notes) : ''}</p>` : ''}
+                          </div>
+                        </div>
+                        <button onclick="window.Lighthouse.setTab('workouts')" class="px-2.5 py-1 rounded-lg lh-elevated text-[11px] font-semibold lh-text-sec hover:lh-text-main shrink-0">
+                          Edit
+                        </button>
                       </div>
                     `;
                   }
@@ -1975,6 +2150,232 @@
               <button onclick="window.Lighthouse.addCustomWatchBlock()" class="py-2 px-4 rounded-xl lh-btn-primary text-xs">
                 + Add to 24h Watch
               </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // =========================================================================
+    // STATION 1B: TRAINING & WORKOUTS PLANNER / CALENDAR SCHEDULER
+    // =========================================================================
+    function renderWorkoutsView() {
+      const filterMod = state.workoutFilterModality || 'All';
+      const allWorkouts = [...(state.workouts || [])].sort(
+        (a, b) => (b.date || '').localeCompare(a.date || '') || (a.startTime || '').localeCompare(b.startTime || '')
+      );
+      const filteredWorkouts =
+        filterMod === 'All'
+          ? allWorkouts
+          : allWorkouts.filter((w) => (w.modality || '').toLowerCase() === filterMod.toLowerCase());
+
+      const completedCount = allWorkouts.filter((w) => w.completed).length;
+      const totalMinsCompleted = allWorkouts
+        .filter((w) => w.completed)
+        .reduce((acc, w) => acc + (Number(w.durationMins) || 0), 0);
+
+      const filterPills = [
+        'All',
+        'Indoor Spinning',
+        'Outdoor Cycling (Road)',
+        'Outdoor Cycling (Single-Track)',
+        'Lifting (Video-Led)',
+        'Pilates / Mobility',
+        'Yoga',
+        'Walking'
+      ];
+
+      return `
+        <div class="space-y-6">
+          <!-- TOP TRAINING BANNER & STATS -->
+          <div class="lh-surface rounded-2xl p-4 sm:p-6 flex flex-wrap items-center justify-between gap-4 border-l-4" style="border-left-color: var(--success-accent);">
+            <div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-[11px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full lh-badge-success">
+                  Training & Conditioning Deck
+                </span>
+                <span class="text-xs font-mono-code lh-text-sec">
+                  ${completedCount} Sessions Logged • ${totalMinsCompleted} Total Mins
+                </span>
+              </div>
+              <h3 class="text-lg sm:text-xl font-bold lh-text-main mt-1">Workout Planner & Calendar Scheduler</h3>
+              <p class="text-xs lh-text-sec">
+                Schedule Indoor Spinning, Road or Single-Track Cycling, Video-Led Lifting, Pilates/Mobility, Yoga, Walking, or any custom session directly onto your Watchtower Calendar and Daily Course Log.
+              </p>
+            </div>
+            <button onclick="window.Lighthouse.setTab('goals')"
+              class="px-3.5 py-2 rounded-xl lh-btn-soft text-xs font-bold flex items-center gap-1.5 shrink-0">
+              <i data-lucide="history" class="w-4 h-4"></i>
+              <span>View Daily History & Backtrack</span>
+            </button>
+          </div>
+
+          <!-- SCHEDULE OR LOG WORKOUT FORM -->
+          <div class="lh-surface rounded-2xl p-4 sm:p-6 space-y-4">
+            <div class="flex items-center justify-between border-b lh-border pb-2.5">
+              <h4 class="font-bold text-sm sm:text-base lh-text-main flex items-center gap-2">
+                <i data-lucide="calendar-plus" class="w-4 h-4" style="color: var(--accent-primary);"></i>
+                <span>Schedule or Log a Workout Session</span>
+              </h4>
+              <span class="text-xs lh-text-sec">Auto-syncs to Watchtower Calendar & Daily Log</span>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-12 gap-3">
+              <!-- Modality Selector + Custom Input -->
+              <div class="sm:col-span-4 space-y-2">
+                <label class="text-xs font-semibold lh-text-sec block">1. Activity / Modality</label>
+                <select id="wk-modality"
+                  onchange="window.Lighthouse.handleWorkoutModalityChange('wk-modality', 'wk-custom-modality')"
+                  class="w-full px-3 py-2.5 rounded-xl lh-input">
+                  ${WORKOUT_MODALITIES.map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('')}
+                </select>
+                <input id="wk-custom-modality" type="text"
+                  placeholder="Type custom workout activity (e.g. Rowing, Rucking, Swimming)..."
+                  class="hidden w-full px-3 py-2.5 rounded-xl lh-input" />
+              </div>
+
+              <!-- Title / Session Focus -->
+              <div class="sm:col-span-5 space-y-2">
+                <label class="text-xs font-semibold lh-text-sec block">2. Workout Title / Focus</label>
+                <input id="wk-title" type="text"
+                  placeholder="e.g. 45m Zone 2 Spin, Upper Body Video Lift, Trail Ride..."
+                  class="w-full px-3.5 py-2.5 rounded-xl lh-input" />
+              </div>
+
+              <!-- Date -->
+              <div class="sm:col-span-3 space-y-2">
+                <label class="text-xs font-semibold lh-text-sec block">3. Date</label>
+                <input id="wk-date" type="date" value="${TODAY_ISO}"
+                  class="w-full px-3 py-2.5 rounded-xl lh-input font-mono-code" />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 sm:grid-cols-12 gap-3">
+              <div class="col-span-1 sm:col-span-3">
+                <label class="text-xs font-semibold lh-text-sec block mb-1">Start Time</label>
+                <input id="wk-time" type="time" value="06:00"
+                  class="w-full px-3 py-2 rounded-xl lh-input font-mono-code" />
+              </div>
+              <div class="col-span-1 sm:col-span-2">
+                <label class="text-xs font-semibold lh-text-sec block mb-1">Duration (m)</label>
+                <input id="wk-duration" type="number" min="5" max="360" step="5" value="45"
+                  class="w-full px-3 py-2 rounded-xl lh-input font-mono-code" />
+              </div>
+              <div class="col-span-2 sm:col-span-3">
+                <label class="text-xs font-semibold lh-text-sec block mb-1">Intensity / Effort</label>
+                <select id="wk-intensity" class="w-full px-3 py-2 rounded-xl lh-input">
+                  <option value="Recovery / Zone 1">Recovery / Zone 1</option>
+                  <option value="Zone 2 Base Endurance" selected>Zone 2 Base Endurance</option>
+                  <option value="Moderate / Tempo">Moderate / Tempo</option>
+                  <option value="High / Threshold">High / Threshold</option>
+                  <option value="Strength / Hypertrophy">Strength / Hypertrophy</option>
+                </select>
+              </div>
+              <div class="col-span-2 sm:col-span-4">
+                <label class="text-xs font-semibold lh-text-sec block mb-1">Video Channel / Trail / Route</label>
+                <input id="wk-route" type="text"
+                  placeholder="e.g. Caroline Girvan, Peloton, DuPont Single-Track..."
+                  class="w-full px-3 py-2 rounded-xl lh-input" />
+              </div>
+            </div>
+
+            <input id="wk-notes" type="text"
+              placeholder="Optional notes (weights used, average watts, tendon feel, or mileage)..."
+              class="w-full px-3.5 py-2.5 rounded-xl lh-input" />
+
+            <div class="flex flex-wrap items-center gap-2.5 pt-1">
+              <button onclick="window.Lighthouse.createWorkout(false)"
+                class="py-2.5 px-5 rounded-xl lh-btn-primary text-xs sm:text-sm font-bold flex items-center gap-2">
+                <i data-lucide="calendar" class="w-4 h-4"></i>
+                <span>+ Schedule on Calendar</span>
+              </button>
+              <button onclick="window.Lighthouse.createWorkout(true)"
+                class="py-2.5 px-4 rounded-xl lh-btn-soft text-xs sm:text-sm font-bold flex items-center gap-2">
+                <i data-lucide="check-circle-2" class="w-4 h-4"></i>
+                <span>✓ Log as Completed Now</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- FILTER BY MODALITY & WORKOUT SCHEDULE LIST -->
+          <div class="space-y-3">
+            <div class="flex items-center justify-between flex-wrap gap-2">
+              <h4 class="text-sm font-bold lh-text-main">Scheduled & Logged Workouts (${filteredWorkouts.length})</h4>
+              <span class="text-xs lh-text-sec">Checking off a workout automatically records it in your Daily Course History</span>
+            </div>
+
+            <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+              ${filterPills
+                .map(
+                  (mod) => `
+                  <button onclick="window.Lighthouse.setWorkoutFilter('${mod}')"
+                    class="px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition ${
+                      filterMod === mod ? 'lh-btn-primary' : 'lh-surface lh-text-sec'
+                    }">
+                    ${escapeHtml(mod)}
+                  </button>
+                `
+                )
+                .join('')}
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              ${
+                filteredWorkouts.length === 0
+                  ? `<p class="text-xs lh-text-sec py-6 text-center md:col-span-2 lh-surface rounded-2xl">No workouts found for this filter. Use the scheduler above to add one!</p>`
+                  : filteredWorkouts
+                      .map(
+                        (w) => `
+                        <div class="lh-surface rounded-2xl p-4 flex flex-col justify-between gap-3 ${w.completed ? 'opacity-75' : ''}">
+                          <div class="flex items-start justify-between gap-3">
+                            <div class="flex items-start gap-3 min-w-0">
+                              <button onclick="window.Lighthouse.toggleWorkoutCompleted('${w.id}')"
+                                class="mt-0.5 w-6 h-6 rounded-lg border lh-border flex items-center justify-center shrink-0"
+                                style="${w.completed ? 'background-color: var(--success-accent); color: var(--accent-contrast);' : ''}">
+                                ${w.completed ? '<i data-lucide="check" class="w-4 h-4"></i>' : ''}
+                              </button>
+                              <div class="min-w-0 space-y-1">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                  <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full lh-badge-success">
+                                    ${escapeHtml(w.modality)}
+                                  </span>
+                                  <span class="text-xs font-mono-code lh-text-sec">
+                                    ${escapeHtml(w.date)} • ${escapeHtml(w.startTime)} (${w.durationMins}m)
+                                  </span>
+                                </div>
+                                <h4 class="font-bold text-sm sm:text-base lh-text-main ${w.completed ? 'line-through lh-text-muted' : ''}">
+                                  ${escapeHtml(w.title)}
+                                </h4>
+                                ${
+                                  w.videoOrRoute
+                                    ? `<p class="text-xs font-medium" style="color: var(--secondary-accent);">📍 ${escapeHtml(w.videoOrRoute)} • ${escapeHtml(w.intensity || 'Moderate')}</p>`
+                                    : ''
+                                }
+                                ${w.notes ? `<p class="text-xs lh-text-sec leading-relaxed">${escapeHtml(w.notes)}</p>` : ''}
+                              </div>
+                            </div>
+                            <button onclick="window.Lighthouse.deleteWorkout('${w.id}')"
+                              class="p-1.5 rounded-lg lh-text-muted hover:lh-text-main shrink-0" title="Delete Workout">
+                              <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                          </div>
+
+                          <div class="pt-2.5 border-t lh-border flex items-center justify-between gap-2">
+                            <span class="text-[11px] font-semibold ${w.completed ? 'lh-text-main' : 'lh-text-sec'}" style="${w.completed ? 'color: var(--success-accent);' : ''}">
+                              ${w.completed ? '✓ Logged in Daily History' : 'Scheduled on Calendar'}
+                            </span>
+                            <div class="flex items-center gap-1.5">
+                              <button onclick="window.Lighthouse.toggleWorkoutCompleted('${w.id}')"
+                                class="px-2.5 py-1 rounded-lg text-xs font-semibold ${w.completed ? 'lh-elevated lh-text-sec' : 'lh-btn-primary'}">
+                                ${w.completed ? 'Mark Incomplete' : '✓ Mark Done'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      `
+                      )
+                      .join('')
+              }
             </div>
           </div>
         </div>
@@ -2437,7 +2838,6 @@
     function renderBespokeJournalForm() {
       const mode = state.selectedJournalMode;
 
-      // MODE 1: BAYLOR 5-MINUTE COGNITIVE OFFLOAD (ACTIONABLE TASK LIST)
       if (mode === 'baylor_offload') {
         const tasks = state.baylorTasksDraft || ['', '', ''];
         return `
@@ -2480,7 +2880,6 @@
         `;
       }
 
-      // MODE 2: THE AUTHENTIC 5-STEP BIBLICAL EXAMEN
       if (mode === 'examen') {
         const d = state.examenDraft || { s1: '', s2: '', s3: '', s4: '', s5: '' };
         const steps = [
@@ -2521,7 +2920,6 @@
         `;
       }
 
-      // MODE 3: PENNEBAKER EXPRESSIVE EMOTIONAL UNPACKING
       if (mode === 'pennebaker') {
         const d = state.pennebakerDraft || { raw: '', reframe: '', intensity: 5 };
         return `
@@ -2554,7 +2952,6 @@
         `;
       }
 
-      // MODE 4: STORY-BASED NARRATIVE GRATITUDE
       if (mode === 'narrative') {
         const d = state.narrativeDraft || { scene: '', story: '', meaning: '' };
         return `
@@ -2582,7 +2979,6 @@
         `;
       }
 
-      // MODE 5: 3-2-1 EVENING CLOSURE
       if (mode === 'closure_321') {
         const d = state.closure321Draft || { w1: '', w2: '', w3: '', l1: '', l2: '', p1: '' };
         return `
@@ -2610,7 +3006,6 @@
         `;
       }
 
-      // MODE 6: PSALM 4:8 NIGHT WATCH SURRENDER
       const d = state.psalm4Draft || { burdens: '', prayer: '' };
       return `
         <div class="space-y-3.5">
@@ -2645,7 +3040,7 @@
       'Marriage & Regla',
       'Family & Sons',
       'Church & Safety Team',
-      'Work & Stewardship',
+      'Work & Arborist Wisdom',
       'Personal Walk',
       'Health & Strength',
       'Friends & Neighbors',
@@ -2729,7 +3124,7 @@
               </div>
             </div>
 
-            <!-- THUMB-FRIENDLY MOBILE QUICK-ADD PRAYER BAR (RIGHT AT TOP OF BOARD) -->
+            <!-- THUMB-FRIENDLY MOBILE QUICK-ADD PRAYER BAR -->
             <div class="p-3.5 sm:p-4 rounded-2xl lh-elevated space-y-3 border-l-4" style="border-left-color: var(--accent-primary);">
               <div class="flex items-center justify-between gap-2">
                 <span class="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5" style="color: var(--accent-primary);">
@@ -2772,7 +3167,7 @@
 
             ${
               activeBoardCards.length === 0
-                ? `<p class="text-xs lh-text-sec py-4 text-center">No cards pinned to your Active Prayer Board yet. Use the Quick-Add bar above or tap "+ Pin to Board" on any card below.</p>`
+                ? `<p class="text-xs lh-text-sec py-4 text-center">No cards pinned to your Active Prayer Board yet. Use the Quick-Add bar above or tap "+ Pin Board" on any card below.</p>`
                 : `<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     ${activeBoardCards
                       .map(
@@ -2813,10 +3208,10 @@
           <!-- SANCTUARY SUB-NAVIGATION TABS -->
           <div class="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
             ${[
-              { id: 'board', label: `All Intercession Cards (${allIntercessionCards.length})`, icon: 'layers' },
-              { id: 'jesus', label: `Jesus’s Prayer Teachings (${JESUS_PRAYER_THEMES.length})`, icon: 'book-open' },
-              { id: 'guided', label: 'Guided P.R.A.Y. Sanctuary', icon: 'Flame' },
-              { id: 'ebenezer', label: `Answered Ebenezer Vault (${answeredCards.length})`, icon: 'award' }
+              { id: 'board', label: `All Intercession Cards (${allIntercessionCards.length})` },
+              { id: 'jesus', label: `Jesus’s Prayer Teachings (${JESUS_PRAYER_THEMES.length})` },
+              { id: 'guided', label: 'Guided P.R.A.Y. Sanctuary' },
+              { id: 'ebenezer', label: `Answered Ebenezer Vault (${answeredCards.length})` }
             ]
               .map(
                 (t) => `
@@ -2831,7 +3226,6 @@
               .join('')}
           </div>
 
-          <!-- SUB-VIEW 1: ALL INTERCESSION CARDS + ADD NEW CARD -->
           ${
             sub === 'board'
               ? `
@@ -2860,7 +3254,7 @@
                                 ${c.onActiveBoard ? '✓ On Board' : '+ Pin Board'}
                               </button>
                               <button onclick="window.Lighthouse.markPrayerAnswered('${c.id}')"
-                                class="py-2 px-2.5 rounded-xl lh-elevated lh-text-sec hover:lh-text-main text-xs font-semibold" title="Mark Answered">
+                                class="py-2 px-2.5 rounded-xl lh-elevated lh-text-sec hover:lh-text-main text-xs font-semibold">
                                 Answered
                               </button>
                             </div>
@@ -2870,80 +3264,53 @@
                       )
                       .join('')}
                   </div>
-
-                  <!-- Detailed Add New Intercession Card Form -->
-                  <div class="lh-surface rounded-2xl p-4 sm:p-5 space-y-3">
-                    <div class="flex items-center justify-between">
-                      <h4 class="font-bold text-sm lh-text-main">Add Detailed Intercession Card</h4>
-                      <label class="flex items-center gap-1.5 text-xs lh-text-sec cursor-pointer">
-                        <input id="pray-pin-toggle" type="checkbox" checked class="w-4 h-4 rounded" />
-                        <span>Pin to Active Board</span>
-                      </label>
-                    </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      <input id="pray-title" type="text" placeholder="Person or Prayer Target..." class="px-3 py-2.5 rounded-xl lh-input" />
-                      ${renderPrayerCategorySelectHtml('pray-cat', 'pray-custom-cat', 'Marriage & Regla')}
-                      <input id="pray-ref" type="text" placeholder="Scripture Anchor (e.g. Col 1:9-10)" class="px-3 py-2.5 rounded-xl lh-input" />
-                    </div>
-                    <textarea id="pray-notes" rows="2" placeholder="Specific prayer request or Scripture reflection..." class="w-full p-3 rounded-xl lh-input"></textarea>
-                    <button onclick="window.Lighthouse.createPrayerCard()" class="w-full sm:w-auto px-5 py-2.5 rounded-xl lh-btn-primary text-xs sm:text-sm font-bold">
-                      + Add to Prayer Sanctuary
-                    </button>
-                  </div>
                 </div>
               `
               : ''
           }
 
-          <!-- SUB-VIEW 2: JESUS'S PRAYER TEACHINGS (12 THEMES WITH NASB & NLT LENSES) -->
           ${
             sub === 'jesus'
               ? `
-                <div class="space-y-3">
-                  <div class="flex items-center justify-between flex-wrap gap-2">
-                    <p class="text-xs lh-text-sec">Tap any card to compare the <strong>NASB Structural Lens</strong> and <strong>NLT Relational Heart Lens</strong>, or pin it to your Active Board.</p>
-                  </div>
-                  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                    ${JESUS_PRAYER_THEMES.map((t) => {
-                      const inPdf = (state.pdfConfig?.selectedJesusThemeIds || []).includes(t.id);
-                      return `
-                        <div class="lh-surface rounded-2xl p-4 flex flex-col justify-between gap-3">
-                          <div onclick="window.Lighthouse.openJesusTeachingDetail('${t.id}')" class="cursor-pointer space-y-2">
-                            <div class="flex items-center justify-between gap-2">
-                              <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full lh-badge">${escapeHtml(t.category)}</span>
-                              <span class="text-xs font-mono-code lh-text-sec">${escapeHtml(t.reference)}</span>
-                            </div>
-                            <h4 class="font-bold text-sm sm:text-base lh-text-main leading-snug">${escapeHtml(t.theme)}</h4>
-                            <p class="text-xs lh-text-sec leading-relaxed">${escapeHtml(t.summary)}</p>
-                            <p class="text-xs italic font-serif-editorial lh-text-main pt-1">“${escapeHtml(t.samplePrayer)}”</p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                  ${JESUS_PRAYER_THEMES.map((t) => {
+                    const inPdf = (state.pdfConfig?.selectedJesusThemeIds || []).includes(t.id);
+                    return `
+                      <div class="lh-surface rounded-2xl p-4 flex flex-col justify-between gap-3">
+                        <div onclick="window.Lighthouse.openJesusTeachingDetail('${t.id}')" class="cursor-pointer space-y-2">
+                          <div class="flex items-center justify-between gap-2">
+                            <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full lh-badge">${escapeHtml(t.category)}</span>
+                            <span class="text-xs font-mono-code lh-text-sec">${escapeHtml(t.reference)}</span>
                           </div>
-                          <div class="pt-2.5 border-t lh-border flex items-center justify-between gap-1.5">
-                            <button onclick="window.Lighthouse.openJesusTeachingDetail('${t.id}')"
-                              class="text-xs font-semibold lh-text-sec hover:lh-text-main flex items-center gap-1 py-1.5">
-                              <i data-lucide="book-open" class="w-3.5 h-3.5" style="color: var(--accent-primary);"></i>
-                              <span>NASB / NLT</span>
+                          <h4 class="font-bold text-sm sm:text-base lh-text-main leading-snug">${escapeHtml(t.theme)}</h4>
+                          <p class="text-xs lh-text-sec leading-relaxed">${escapeHtml(t.summary)}</p>
+                          <p class="text-xs italic font-serif-editorial lh-text-main pt-1">“${escapeHtml(t.samplePrayer)}”</p>
+                        </div>
+                        <div class="pt-2.5 border-t lh-border flex items-center justify-between gap-1.5">
+                          <button onclick="window.Lighthouse.openJesusTeachingDetail('${t.id}')"
+                            class="text-xs font-semibold lh-text-sec hover:lh-text-main flex items-center gap-1 py-1.5">
+                            <i data-lucide="book-open" class="w-3.5 h-3.5" style="color: var(--accent-primary);"></i>
+                            <span>NASB / NLT</span>
+                          </button>
+                          <div class="flex items-center gap-1.5">
+                            <button onclick="window.Lighthouse.togglePdfJesusTheme('${t.id}', true)"
+                              class="px-2.5 py-2 rounded-xl text-xs font-semibold ${inPdf ? 'lh-badge-success' : 'lh-elevated lh-text-sec'}">
+                              ${inPdf ? '✓ PDF' : '+ PDF'}
                             </button>
-                            <div class="flex items-center gap-1.5">
-                              <button onclick="window.Lighthouse.togglePdfJesusTheme('${t.id}', true)"
-                                class="px-2.5 py-2 rounded-xl text-xs font-semibold ${inPdf ? 'lh-badge-success' : 'lh-elevated lh-text-sec'}">
-                                ${inPdf ? '✓ PDF' : '+ PDF'}
-                              </button>
-                              <button onclick="window.Lighthouse.addJesusThemeToBoard('${t.id}')"
-                                class="px-3 py-2 rounded-xl lh-btn-primary text-xs font-bold">
-                                + Pin Board
-                              </button>
-                            </div>
+                            <button onclick="window.Lighthouse.addJesusThemeToBoard('${t.id}')"
+                              class="px-3 py-2 rounded-xl lh-btn-primary text-xs font-bold">
+                              + Pin Board
+                            </button>
                           </div>
                         </div>
-                      `;
-                    }).join('')}
-                  </div>
+                      </div>
+                    `;
+                  }).join('')}
                 </div>
               `
               : ''
           }
 
-          <!-- SUB-VIEW 3: GUIDED P.R.A.Y. DEVOTIONAL SANCTUARY -->
           ${
             sub === 'guided'
               ? `
@@ -2952,17 +3319,6 @@
                     <div>
                       <span class="text-[11px] font-semibold uppercase tracking-wider" style="color: var(--accent-primary);">Lectio 365 Guided Method</span>
                       <h4 class="text-lg font-bold lh-text-main">Step ${(state.guidedStepIndex || 0) + 1} of 4: ${escapeHtml(curStep.title)}</h4>
-                    </div>
-                    <div class="flex items-center gap-1.5">
-                      ${praySteps
-                        .map(
-                          (st, idx) => `
-                          <span class="w-7 h-7 rounded-lg text-xs font-bold flex items-center justify-center ${
-                            idx === (state.guidedStepIndex || 0) ? 'lh-btn-primary' : 'lh-elevated lh-text-sec'
-                          }">${st.code}</span>
-                        `
-                        )
-                        .join('')}
                     </div>
                   </div>
                   <div class="p-4 rounded-xl lh-elevated space-y-2">
@@ -2982,7 +3338,6 @@
               : ''
           }
 
-          <!-- SUB-VIEW 4: EBENEZER ANSWERED PRAYER VAULT -->
           ${
             sub === 'ebenezer'
               ? `
@@ -3014,14 +3369,305 @@
     }
 
     // =========================================================================
-    // STATION 6: CHARTED COURSE (WOOP + IF-THEN GOAL ENGINE & aMCC TRACKER)
+    // STATION 6: CHARTED COURSE (DAILY BACKTRACK LEDGER + WOOP GOAL ENGINE)
     // =========================================================================
+    function formatReadableDateLabel(dateStr) {
+      if (!dateStr) return 'Today';
+      if (dateStr === getLocalIsoDate(0)) return `Today (${dateStr})`;
+      if (dateStr === getLocalIsoDate(-1)) return `Yesterday (${dateStr})`;
+      if (dateStr === getLocalIsoDate(1)) return `Tomorrow (${dateStr})`;
+      const [y, m, d] = dateStr.split('-').map(Number);
+      const dt = new Date(y, m - 1, d);
+      return dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    }
+
     function renderGoalsView() {
       const activeGoals = (state.goals || []).filter((g) => g.status === 'active');
       const maxGoals = Number(state.settings.maxActiveGoals) || 3;
 
+      const selDate = state.backtrackDate || getLocalIsoDate(0);
+      const dayLog = ensureDailyLog(selDate);
+      const dayWorkouts = (state.workouts || []).filter((w) => w.date === selDate);
+
+      // Build 7-day visual strip (6 days back + today)
+      const recent7Days = Array.from({ length: 7 }, (_, idx) => {
+        const dStr = getLocalIsoDate(idx - 6);
+        const [, mm, dd] = dStr.split('-');
+        const dt = new Date(Number(dStr.slice(0, 4)), Number(mm) - 1, Number(dd));
+        const dayName = dt.toLocaleDateString('en-US', { weekday: 'short' });
+        const h = state.dailyHistory?.[dStr] || {};
+        const wks = (state.workouts || []).filter((w) => w.date === dStr && w.completed);
+        const todosDone = (h.todos || []).filter((t) => t.completed).length;
+        return {
+          dateStr: dStr,
+          dayName,
+          dayNum: dd,
+          hasWorkout: wks.length > 0,
+          hasPrayer: Boolean(h.prayerDone),
+          hasNight: Boolean(h.nightDone),
+          todosDone
+        };
+      });
+
       return `
         <div class="space-y-6">
+          <!-- =================================================================
+               1. DAILY ACCOMPLISHMENT & BACKTRACK LEDGER (TIME-MACHINE)
+               ================================================================= -->
+          <div class="lh-surface rounded-2xl p-4 sm:p-6 space-y-5 border-l-4" style="border-left-color: var(--success-accent);">
+            <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b lh-border">
+              <div>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full lh-badge-success">
+                    Daily Accomplishment & Backtrack Ledger
+                  </span>
+                  <span class="text-xs font-mono-code lh-text-sec">${escapeHtml(formatReadableDateLabel(selDate))}</span>
+                </div>
+                <h3 class="text-lg sm:text-xl font-bold lh-text-main mt-1">
+                  Everything Done on ${escapeHtml(formatReadableDateLabel(selDate))}
+                </h3>
+                <p class="text-xs lh-text-sec">
+                  Backtrack to any day to review or check off your To-Dos, Workouts, and whole-item Prayer & Night Watch completions.
+                </p>
+              </div>
+
+              <!-- Date Stepper & Picker Controls -->
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <button onclick="window.Lighthouse.stepBacktrackDate(-1)"
+                  class="px-3 py-2 rounded-xl lh-elevated lh-text-main text-xs font-bold flex items-center gap-1 hover:opacity-85">
+                  <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                  <span>Prev Day</span>
+                </button>
+                <input type="date" value="${escapeHtml(selDate)}"
+                  onchange="window.Lighthouse.setBacktrackDate(this.value)"
+                  class="px-3 py-2 rounded-xl lh-input font-mono-code text-xs" />
+                <button onclick="window.Lighthouse.stepBacktrackDate(1)"
+                  class="px-3 py-2 rounded-xl lh-elevated lh-text-main text-xs font-bold flex items-center gap-1 hover:opacity-85">
+                  <span>Next Day</span>
+                  <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                </button>
+                ${
+                  selDate !== getLocalIsoDate(0)
+                    ? `<button onclick="window.Lighthouse.setBacktrackDate('${getLocalIsoDate(0)}')"
+                        class="px-3 py-2 rounded-xl lh-btn-primary text-xs font-bold">
+                        Today
+                      </button>`
+                    : ''
+                }
+              </div>
+            </div>
+
+            <!-- 7-DAY QUICK-TAP BACKTRACK STRIP -->
+            <div class="grid grid-cols-7 gap-1.5">
+              ${recent7Days
+                .map((d) => {
+                  const isSel = d.dateStr === selDate;
+                  return `
+                    <button onclick="window.Lighthouse.setBacktrackDate('${d.dateStr}')"
+                      class="p-2 rounded-xl text-center transition flex flex-col items-center justify-between gap-1 ${
+                        isSel ? 'lh-btn-primary shadow-md' : 'lh-elevated lh-text-main hover:opacity-90'
+                      }">
+                      <span class="text-[10px] font-semibold uppercase opacity-80">${escapeHtml(d.dayName)}</span>
+                      <span class="text-xs sm:text-sm font-bold font-mono-code">${escapeHtml(d.dayNum)}</span>
+                      <div class="flex items-center gap-1 mt-0.5">
+                        <span class="w-1.5 h-1.5 rounded-full ${d.hasWorkout ? 'bg-emerald-400' : 'bg-white/20'}" title="Workout"></span>
+                        <span class="w-1.5 h-1.5 rounded-full ${d.hasPrayer ? 'bg-amber-400' : 'bg-white/20'}" title="Prayer"></span>
+                        <span class="w-1.5 h-1.5 rounded-full ${d.hasNight ? 'bg-sky-400' : 'bg-white/20'}" title="Night Watch"></span>
+                      </div>
+                    </button>
+                  `;
+                })
+                .join('')}
+            </div>
+
+            <!-- WHOLE-ITEM MACRO CHECKBOXES (PRAYER WATCH & NIGHT WATCH AS WHOLE ITEMS) -->
+            <div class="space-y-2">
+              <span class="text-xs font-bold uppercase tracking-wider lh-text-sec block">
+                1. Whole-Routine Daily Check-Offs (One Tap — No Micro-Pieces)
+              </span>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <!-- Prayer Sanctuary (Whole Item) -->
+                <button onclick="window.Lighthouse.toggleDailyMacro('${selDate}', 'prayerDone')"
+                  class="p-3.5 rounded-2xl text-left transition flex items-center justify-between gap-3 ${
+                    dayLog.prayerDone ? 'lh-badge-success' : 'lh-elevated lh-text-main'
+                  }">
+                  <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-7 h-7 rounded-xl border lh-border flex items-center justify-center shrink-0"
+                      style="${dayLog.prayerDone ? 'background-color: var(--success-accent); color: var(--accent-contrast);' : ''}">
+                      ${dayLog.prayerDone ? '<i data-lucide="check" class="w-4 h-4"></i>' : '<i data-lucide="heart" class="w-4 h-4"></i>'}
+                    </div>
+                    <div class="min-w-0">
+                      <p class="font-bold text-sm truncate">Prayer Sanctuary</p>
+                      <p class="text-[11px] opacity-80 truncate">${dayLog.prayerDone ? 'Completed for this day' : 'Tap to mark whole item done'}</p>
+                    </div>
+                  </div>
+                </button>
+
+                <!-- Night Watch & Wind-Down (Whole Item) -->
+                <button onclick="window.Lighthouse.toggleDailyMacro('${selDate}', 'nightDone')"
+                  class="p-3.5 rounded-2xl text-left transition flex items-center justify-between gap-3 ${
+                    dayLog.nightDone ? 'lh-badge-success' : 'lh-elevated lh-text-main'
+                  }">
+                  <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-7 h-7 rounded-xl border lh-border flex items-center justify-center shrink-0"
+                      style="${dayLog.nightDone ? 'background-color: var(--success-accent); color: var(--accent-contrast);' : ''}">
+                      ${dayLog.nightDone ? '<i data-lucide="check" class="w-4 h-4"></i>' : '<i data-lucide="moon" class="w-4 h-4"></i>'}
+                    </div>
+                    <div class="min-w-0">
+                      <p class="font-bold text-sm truncate">Night Watch & Log</p>
+                      <p class="text-[11px] opacity-80 truncate">${dayLog.nightDone ? 'Completed for this day' : 'Tap to mark whole item done'}</p>
+                    </div>
+                  </div>
+                </button>
+
+                <!-- Morning Watch (Whole Item) -->
+                <button onclick="window.Lighthouse.toggleDailyMacro('${selDate}', 'morningDone')"
+                  class="p-3.5 rounded-2xl text-left transition flex items-center justify-between gap-3 ${
+                    dayLog.morningDone ? 'lh-badge-success' : 'lh-elevated lh-text-main'
+                  }">
+                  <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-7 h-7 rounded-xl border lh-border flex items-center justify-center shrink-0"
+                      style="${dayLog.morningDone ? 'background-color: var(--success-accent); color: var(--accent-contrast);' : ''}">
+                      ${dayLog.morningDone ? '<i data-lucide="check" class="w-4 h-4"></i>' : '<i data-lucide="sun" class="w-4 h-4"></i>'}
+                    </div>
+                    <div class="min-w-0">
+                      <p class="font-bold text-sm truncate">Morning Watch</p>
+                      <p class="text-[11px] opacity-80 truncate">${dayLog.morningDone ? 'Completed for this day' : 'Tap to mark whole item done'}</p>
+                    </div>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            <!-- TWO-COLUMN SPLIT: WORKOUTS ON THIS DAY + TO-DOS ON THIS DAY -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+              <!-- LEFT: WORKOUTS FOR SELECTED DATE -->
+              <div class="p-4 rounded-2xl lh-elevated space-y-3 flex flex-col justify-between">
+                <div class="space-y-2.5">
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5" style="color: var(--success-accent);">
+                      <i data-lucide="dumbbell" class="w-4 h-4"></i>
+                      <span>2. Workouts (${dayWorkouts.length})</span>
+                    </span>
+                    <button onclick="window.Lighthouse.setTab('workouts')" class="text-[11px] font-semibold lh-text-sec hover:lh-text-main">
+                      Open Full Planner →
+                    </button>
+                  </div>
+
+                  ${
+                    dayWorkouts.length === 0
+                      ? `<p class="text-xs lh-text-sec py-2">No workouts logged for ${escapeHtml(selDate)} yet. Quick-add one below:</p>`
+                      : `<div class="space-y-2">
+                          ${dayWorkouts
+                            .map(
+                              (w) => `
+                              <div class="p-3 rounded-xl lh-surface flex items-center justify-between gap-2">
+                                <div class="flex items-center gap-2.5 min-w-0">
+                                  <button onclick="window.Lighthouse.toggleWorkoutCompleted('${w.id}')"
+                                    class="w-5 h-5 rounded-md border lh-border flex items-center justify-center shrink-0"
+                                    style="${w.completed ? 'background-color: var(--success-accent); color: var(--accent-contrast);' : ''}">
+                                    ${w.completed ? '<i data-lucide="check" class="w-3.5 h-3.5"></i>' : ''}
+                                  </button>
+                                  <div class="min-w-0">
+                                    <div class="flex items-center gap-1.5">
+                                      <span class="text-[10px] font-bold px-2 py-0.5 rounded-full lh-badge-success">${escapeHtml(w.modality)}</span>
+                                      <span class="text-[11px] font-mono-code lh-text-sec">${w.durationMins}m</span>
+                                    </div>
+                                    <p class="text-xs sm:text-sm font-semibold lh-text-main truncate mt-0.5 ${w.completed ? 'line-through lh-text-muted' : ''}">
+                                      ${escapeHtml(w.title)}
+                                    </p>
+                                  </div>
+                                </div>
+                                <button onclick="window.Lighthouse.deleteWorkout('${w.id}')" class="p-1 lh-text-muted hover:lh-text-main">
+                                  <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                </button>
+                              </div>
+                            `
+                            )
+                            .join('')}
+                        </div>`
+                  }
+                </div>
+
+                <!-- Quick Log Workout on This Specific Date -->
+                <div class="pt-2.5 border-t lh-border space-y-2">
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <select id="bt-wk-modality"
+                      onchange="window.Lighthouse.handleWorkoutModalityChange('bt-wk-modality', 'bt-wk-custom')"
+                      class="px-2.5 py-2 rounded-xl lh-input text-xs">
+                      ${WORKOUT_MODALITIES.map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('')}
+                    </select>
+                    <input id="bt-wk-title" type="text"
+                      onkeydown="if(event.key==='Enter') window.Lighthouse.quickAddBacktrackWorkout('${selDate}')"
+                      placeholder="Session title / focus (e.g. 45m Spin)..."
+                      class="px-3 py-2 rounded-xl lh-input text-xs" />
+                  </div>
+                  <input id="bt-wk-custom" type="text" placeholder="Type custom workout activity..." class="hidden w-full px-3 py-2 rounded-xl lh-input text-xs" />
+                  <button onclick="window.Lighthouse.quickAddBacktrackWorkout('${selDate}')"
+                    class="w-full py-2 rounded-xl lh-btn-soft text-xs font-bold">
+                    + Log Completed Workout on ${escapeHtml(selDate)}
+                  </button>
+                </div>
+              </div>
+
+              <!-- RIGHT: TO-DOS & TASKS DONE ON SELECTED DATE -->
+              <div class="p-4 rounded-2xl lh-elevated space-y-3 flex flex-col justify-between">
+                <div class="space-y-2.5">
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5" style="color: var(--accent-primary);">
+                      <i data-lucide="check-square" class="w-4 h-4"></i>
+                      <span>3. To-Dos & Tasks (${(dayLog.todos || []).length})</span>
+                    </span>
+                    <span class="text-[11px] font-mono-code lh-text-sec">
+                      ${(dayLog.todos || []).filter((t) => t.completed).length} Done
+                    </span>
+                  </div>
+
+                  ${
+                    (dayLog.todos || []).length === 0
+                      ? `<p class="text-xs lh-text-sec py-2">No tasks recorded for ${escapeHtml(selDate)} yet. Add any completed to-do below:</p>`
+                      : `<div class="space-y-2">
+                          ${(dayLog.todos || [])
+                            .map(
+                              (td) => `
+                              <div class="p-3 rounded-xl lh-surface flex items-center justify-between gap-2">
+                                <div class="flex items-center gap-2.5 min-w-0">
+                                  <button onclick="window.Lighthouse.toggleBacktrackTodo('${selDate}', '${td.id}')"
+                                    class="w-5 h-5 rounded-md border lh-border flex items-center justify-center shrink-0"
+                                    style="${td.completed ? 'background-color: var(--success-accent); color: var(--accent-contrast);' : ''}">
+                                    ${td.completed ? '<i data-lucide="check" class="w-3.5 h-3.5"></i>' : ''}
+                                  </button>
+                                  <span class="text-xs sm:text-sm font-medium lh-text-main ${td.completed ? 'line-through lh-text-muted' : ''}">
+                                    ${escapeHtml(td.text)}
+                                  </span>
+                                </div>
+                                <button onclick="window.Lighthouse.deleteBacktrackTodo('${selDate}', '${td.id}')"
+                                  class="p-1 lh-text-muted hover:lh-text-main">
+                                  <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                </button>
+                              </div>
+                            `
+                            )
+                            .join('')}
+                        </div>`
+                  }
+                </div>
+
+                <!-- Quick Add To-Do on This Specific Date -->
+                <div class="pt-2.5 border-t lh-border flex items-center gap-2">
+                  <input id="bt-todo-input" type="text"
+                    onkeydown="if(event.key==='Enter') window.Lighthouse.addBacktrackTodo('${selDate}')"
+                    placeholder="Add to-do or accomplishment for ${escapeHtml(selDate)}..."
+                    class="flex-1 px-3 py-2 rounded-xl lh-input text-xs" />
+                  <button onclick="window.Lighthouse.addBacktrackTodo('${selDate}')"
+                    class="py-2 px-3.5 rounded-xl lh-btn-primary text-xs font-bold shrink-0">
+                    + Add
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- EXPLAINER BANNER: WHAT IS CHARTED COURSE? -->
           <div class="lh-surface rounded-2xl p-4 sm:p-6 space-y-3 border-l-4" style="border-left-color: var(--accent-primary);">
             <div class="flex flex-wrap items-center justify-between gap-2">
@@ -4251,6 +4897,9 @@
         case 'watchtower':
           viewport.innerHTML = renderWatchtowerView();
           break;
+        case 'workouts':
+          viewport.innerHTML = renderWorkoutsView();
+          break;
         case 'lists':
           viewport.innerHTML = renderListsView();
           break;
@@ -4327,7 +4976,27 @@
         showToast(state.planLocked ? 'Locked 24-Hour Watchtower!' : 'Unlocked 24-Hour Watchtower.');
       },
       togglePlanBlock(blockId) {
-        state.planBlocks = state.planBlocks.map((b) => (b.id === blockId ? { ...b, completed: !b.completed } : b));
+        let toggledBlock = null;
+        state.planBlocks = state.planBlocks.map((b) => {
+          if (b.id === blockId) {
+            toggledBlock = { ...b, completed: !b.completed };
+            return toggledBlock;
+          }
+          return b;
+        });
+        if (toggledBlock && toggledBlock.completed) {
+          const targetDate = getLocalIsoDate(toggledBlock.dayOffset || 0);
+          const log = ensureDailyLog(targetDate);
+          if (toggledBlock.category === 'prayer') log.prayerDone = true;
+          else if (toggledBlock.category === 'night') log.nightDone = true;
+          else if (toggledBlock.category === 'morning') log.morningDone = true;
+          else {
+            const exists = (log.todos || []).some((t) => t.text === toggledBlock.title);
+            if (!exists) {
+              log.todos.push({ id: `dh-${Date.now()}`, text: toggledBlock.title, completed: true });
+            }
+          }
+        }
         saveState();
         renderApp();
       },
@@ -4502,7 +5171,6 @@
         }
       },
 
-      // Morning & Night Board Management
       setMorningCategory(cat) {
         state.morningCategoryFilter = cat;
         renderApp();
@@ -4588,6 +5256,153 @@
         showToast(`Pushed ${cards.length} Night Watch cards to tonight’s 24h Watchtower!`);
       },
 
+      // Training & Workouts Planner + Daily Backtrack Handlers
+      handleWorkoutModalityChange(selectId, customInputId) {
+        const sel = document.getElementById(selectId);
+        const inp = document.getElementById(customInputId);
+        if (!sel || !inp) return;
+        if (sel.value === 'Custom / Other...') {
+          inp.classList.remove('hidden');
+          inp.focus();
+        } else {
+          inp.classList.add('hidden');
+        }
+      },
+      resolveWorkoutModality(selectId, customInputId) {
+        const selVal = document.getElementById(selectId)?.value || 'Indoor Spinning';
+        if (selVal === 'Custom / Other...') {
+          const customVal = (document.getElementById(customInputId)?.value || '').trim();
+          return customVal || 'Custom Workout';
+        }
+        return selVal;
+      },
+      createWorkout(markCompletedImmediately = false) {
+        const modality = this.resolveWorkoutModality('wk-modality', 'wk-custom-modality');
+        const rawTitle = (document.getElementById('wk-title')?.value || '').trim();
+        const title = rawTitle || `${modality} Session`;
+        const date = document.getElementById('wk-date')?.value || getLocalIsoDate(0);
+        const startTime = document.getElementById('wk-time')?.value || '06:00';
+        const durationMins = Number(document.getElementById('wk-duration')?.value) || 45;
+        const intensity = document.getElementById('wk-intensity')?.value || 'Moderate';
+        const videoOrRoute = (document.getElementById('wk-route')?.value || '').trim();
+        const notes = (document.getElementById('wk-notes')?.value || '').trim();
+
+        if (!Array.isArray(state.workouts)) state.workouts = [];
+        state.workouts.unshift({
+          id: `wk-${Date.now()}`,
+          date,
+          startTime,
+          durationMins,
+          modality,
+          title,
+          videoOrRoute,
+          intensity,
+          notes,
+          completed: Boolean(markCompletedImmediately)
+        });
+        ensureDailyLog(date);
+        saveState();
+        renderApp();
+        showToast(
+          markCompletedImmediately
+            ? `Logged completed ${modality}: "${title}" on ${date}!`
+            : `Scheduled ${modality}: "${title}" on ${date} (${startTime})!`
+        );
+      },
+      toggleWorkoutCompleted(workoutId) {
+        state.workouts = (state.workouts || []).map((w) =>
+          w.id === workoutId ? { ...w, completed: !w.completed } : w
+        );
+        saveState();
+        renderApp();
+        showToast('Updated workout status!');
+      },
+      deleteWorkout(workoutId) {
+        state.workouts = (state.workouts || []).filter((w) => w.id !== workoutId);
+        saveState();
+        renderApp();
+      },
+      setWorkoutFilter(mod) {
+        state.workoutFilterModality = mod;
+        renderApp();
+      },
+
+      // Daily Accomplishment & Backtrack Ledger Handlers
+      setBacktrackDate(dateStr) {
+        if (!dateStr) return;
+        state.backtrackDate = dateStr;
+        ensureDailyLog(dateStr);
+        saveState();
+        renderApp();
+      },
+      stepBacktrackDate(deltaDays) {
+        const cur = state.backtrackDate || getLocalIsoDate(0);
+        const [y, m, d] = cur.split('-').map(Number);
+        const dt = new Date(y, m - 1, d);
+        dt.setDate(dt.getDate() + deltaDays);
+        const nextIso = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+        this.setBacktrackDate(nextIso);
+      },
+      toggleDailyMacro(dateStr, fieldKey) {
+        const log = ensureDailyLog(dateStr);
+        log[fieldKey] = !log[fieldKey];
+        saveState();
+        renderApp();
+        const labels = {
+          prayerDone: 'Prayer Sanctuary',
+          nightDone: 'Night Watch & Wind-Down',
+          morningDone: 'Morning Watch'
+        };
+        showToast(`${log[fieldKey] ? 'Completed' : 'Unchecked'} ${labels[fieldKey] || 'routine'} for ${dateStr}!`);
+      },
+      quickAddBacktrackWorkout(dateStr) {
+        const targetDate = dateStr || state.backtrackDate || getLocalIsoDate(0);
+        const modality = this.resolveWorkoutModality('bt-wk-modality', 'bt-wk-custom');
+        const rawTitle = (document.getElementById('bt-wk-title')?.value || '').trim();
+        const title = rawTitle || `${modality} Session`;
+        if (!Array.isArray(state.workouts)) state.workouts = [];
+        state.workouts.unshift({
+          id: `wk-${Date.now()}`,
+          date: targetDate,
+          startTime: '06:00',
+          durationMins: 45,
+          modality,
+          title,
+          videoOrRoute: '',
+          intensity: 'Moderate',
+          notes: 'Logged via Charted Course Daily Backtrack',
+          completed: true
+        });
+        saveState();
+        renderApp();
+        showToast(`Logged "${title}" (${modality}) for ${targetDate}!`);
+      },
+      addBacktrackTodo(dateStr) {
+        const targetDate = dateStr || state.backtrackDate || getLocalIsoDate(0);
+        const inp = document.getElementById('bt-todo-input');
+        const text = (inp?.value || '').trim();
+        if (!text) return;
+        const log = ensureDailyLog(targetDate);
+        log.todos.push({ id: `dh-${Date.now()}`, text, completed: true });
+        saveState();
+        renderApp();
+        showToast(`Logged completed to-do for ${targetDate}!`);
+      },
+      toggleBacktrackTodo(dateStr, todoId) {
+        const log = ensureDailyLog(dateStr);
+        log.todos = (log.todos || []).map((t) =>
+          t.id === todoId ? { ...t, completed: !t.completed } : t
+        );
+        saveState();
+        renderApp();
+      },
+      deleteBacktrackTodo(dateStr, todoId) {
+        const log = ensureDailyLog(dateStr);
+        log.todos = (log.todos || []).filter((t) => t.id !== todoId);
+        saveState();
+        renderApp();
+      },
+
       // Bespoke Captain's Log Handlers
       setJournalMode(modeId) {
         state.selectedJournalMode = modeId;
@@ -4625,9 +5440,10 @@
           summaryText: clean.map((t, i) => `${i + 1}. ${t}`).join('\n')
         });
         state.baylorTasksDraft = ['', '', ''];
+        ensureDailyLog(getLocalIsoDate(0)).nightDone = true;
         saveState();
         renderApp();
-        showToast('Saved Baylor Cognitive Offload!');
+        showToast('Saved Baylor Cognitive Offload & marked Night Watch complete!');
       },
       updateExamenStep(key, val) {
         state.examenDraft[key] = val;
@@ -4651,9 +5467,10 @@
           summaryText: text
         });
         state.examenDraft = { s1: '', s2: '', s3: '', s4: '', s5: '' };
+        ensureDailyLog(getLocalIsoDate(0)).nightDone = true;
         saveState();
         renderApp();
-        showToast('Saved 5-Step Biblical Examen!');
+        showToast('Saved 5-Step Biblical Examen & marked Night Watch complete!');
       },
       updatePennebaker(key, val) {
         state.pennebakerDraft[key] = val;
@@ -4669,9 +5486,10 @@
           summaryText: `Unpacked: ${d.raw}\nReframe: ${d.reframe}`
         });
         state.pennebakerDraft = { raw: '', reframe: '', intensity: 5 };
+        ensureDailyLog(getLocalIsoDate(0)).nightDone = true;
         saveState();
         renderApp();
-        showToast('Saved Pennebaker Unpacking!');
+        showToast('Saved Pennebaker Unpacking & marked Night Watch complete!');
       },
       updateNarrative(key, val) {
         state.narrativeDraft[key] = val;
@@ -4686,9 +5504,10 @@
           summaryText: `Scene: ${d.scene}\nStory: ${d.story}\nTakeaway: ${d.meaning}`
         });
         state.narrativeDraft = { scene: '', story: '', meaning: '' };
+        ensureDailyLog(getLocalIsoDate(0)).nightDone = true;
         saveState();
         renderApp();
-        showToast('Saved Gratitude Story!');
+        showToast('Saved Gratitude Story & marked Night Watch complete!');
       },
       update321(key, val) {
         state.closure321Draft[key] = val;
@@ -4703,9 +5522,10 @@
           summaryText: text
         });
         state.closure321Draft = { w1: '', w2: '', w3: '', l1: '', l2: '', p1: '' };
+        ensureDailyLog(getLocalIsoDate(0)).nightDone = true;
         saveState();
         renderApp();
-        showToast('Saved 3-2-1 Closure!');
+        showToast('Saved 3-2-1 Closure & marked Night Watch complete!');
       },
       updatePsalm4(key, val) {
         state.psalm4Draft[key] = val;
@@ -4720,9 +5540,10 @@
           summaryText: `Released: ${d.burdens}\nPrayer: ${d.prayer}`
         });
         state.psalm4Draft = { burdens: '', prayer: '' };
+        ensureDailyLog(getLocalIsoDate(0)).nightDone = true;
         saveState();
         renderApp();
-        showToast('Entrusted tonight’s watch to the Lord.');
+        showToast('Entrusted tonight’s watch to the Lord & marked Night Watch complete.');
       },
 
       // Harbor Wall Lists Handlers
@@ -4753,11 +5574,29 @@
         renderApp();
       },
       toggleListItem(boardId, itemId) {
+        let completedItemText = null;
         state.lists = state.lists.map((b) =>
           b.id === boardId
-            ? { ...b, items: b.items.map((it) => (it.id === itemId ? { ...it, completed: !it.completed } : it)) }
+            ? {
+                ...b,
+                items: b.items.map((it) => {
+                  if (it.id === itemId) {
+                    const nextCompleted = !it.completed;
+                    if (nextCompleted) completedItemText = `[${b.title}] ${it.text}`;
+                    return { ...it, completed: nextCompleted };
+                  }
+                  return it;
+                })
+              }
             : b
         );
+        if (completedItemText) {
+          const todayLog = ensureDailyLog(getLocalIsoDate(0));
+          const exists = (todayLog.todos || []).some((t) => t.text === completedItemText);
+          if (!exists) {
+            todayLog.todos.push({ id: `dh-${Date.now()}`, text: completedItemText, completed: true });
+          }
+        }
         saveState();
         renderApp();
       },
@@ -4830,9 +5669,10 @@
         state.prayerCards = state.prayerCards.map((c) =>
           c.id === cardId ? { ...c, prayedCount: (c.prayedCount || 0) + 1, lastPrayed: 'Today' } : c
         );
+        ensureDailyLog(getLocalIsoDate(0)).prayerDone = true;
         saveState();
         renderApp();
-        showToast('Amen — logged intercession!');
+        showToast('Amen — logged intercession & marked today’s Prayer Watch complete!');
       },
       togglePrayerBoardPin(cardId) {
         state.prayerCards = state.prayerCards.map((c) =>
