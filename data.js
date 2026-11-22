@@ -10,6 +10,20 @@ export const SUPABASE_CONFIG = {
   schema: 'Lighthouse'
 };
 
+// Legacy hardcoded filler calendar event IDs to auto-purge from saved storage
+export const LEGACY_MOCK_GCAL_IDS = [
+  'gcal-1',
+  'gcal-2',
+  'gcal-3',
+  'gcal-4',
+  'gcal-5',
+  'gcal-6',
+  'gcal-7',
+  'gcal-8',
+  'gcal-9',
+  'gcal-10'
+];
+
 // Maps every station tab to its dedicated HTML file
 export const NAV_STATIONS = [
   { id: 'calendar', page: 'index.html', label: 'Watchtower (24h)', shortLabel: '24h Watch', icon: 'compass' },
@@ -78,7 +92,7 @@ export const PRAYER_CATEGORY_OPTIONS = [
 ];
 
 // =========================================================================
-// DATE HELPERS
+// LIVE DATE HELPERS
 // =========================================================================
 export function getLocalIsoDate(offsetDays = 0) {
   const d = new Date();
@@ -90,13 +104,25 @@ export function getLocalIsoDate(offsetDays = 0) {
 }
 
 export function getDayOffsetFromIsoDate(dateStr) {
-  if (!dateStr) return 0;
+  if (!dateStr) return null;
   const [y, m, d] = dateStr.split('-').map(Number);
-  if (!y || !m || !d) return 0;
+  if (!y || !m || !d) return null;
   const target = new Date(y, m - 1, d);
   const now = new Date();
   const todayMid = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   return Math.round((target - todayMid) / 86400000);
+}
+
+export function formatShortDate(offsetDays = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+export function formatFullDate(offsetDays = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 }
 
 export const TODAY_ISO = getLocalIsoDate(0);
@@ -776,7 +802,7 @@ export const JESUS_PRAYER_THEMES = [
 ];
 
 // =========================================================================
-// DEFAULT APPLICATION STATE
+// DEFAULT APPLICATION STATE (ZERO FAKE CALENDAR EVENTS)
 // =========================================================================
 export const INITIAL_STATE = {
   activeTab: 'calendar',
@@ -890,22 +916,12 @@ export const INITIAL_STATE = {
     wifeFilterKeywords: ['dotti', 'musora', 'cancel', 'breakfast w/', 'advisement', 'remind', 'hair', 'nails', 'personal', 'rx'],
     gcalClientId: '974855148969-n2ejn4qosb4oreulnjljnijmkrm2lfnl.apps.googleusercontent.com',
     gcalReadOnlyScope: true,
-    lastGcalSync: 'Nov 2026 Snapshot',
+    lastGcalSync: 'Not synced yet',
     lastCalendarSummary: []
   },
 
-  gcalEvents: [
-    { id: 'gcal-1', dayOffset: 0, startTime: '08:00', endTime: '17:00', title: 'No School', calendar: 'Wife Shared (regla317)', isSoloReminder: false, location: 'District Calendar' },
-    { id: 'gcal-2', dayOffset: 1, startTime: '09:00', endTime: '10:00', title: 'Breakfast w/Erica', calendar: 'Wife Shared (regla317)', isSoloReminder: true, location: '5844 Reidville Rd, Moore, SC' },
-    { id: 'gcal-3', dayOffset: 1, startTime: '18:30', endTime: '20:30', title: 'BSF North Gate Church', calendar: 'Wife Shared (reglaschuler)', isSoloReminder: false, location: '620 Holly Springs Rd, Lyman, SC' },
-    { id: 'gcal-4', dayOffset: 2, startTime: '08:00', endTime: '08:30', title: 'Dotti replacement', calendar: 'Wife Shared (regla317)', isSoloReminder: true, location: 'Personal Reminder' },
-    { id: 'gcal-5', dayOffset: 2, startTime: '08:15', endTime: '09:15', title: 'HSM Veterans', calendar: 'Wife Shared (regla317)', isSoloReminder: false, location: 'School Event' },
-    { id: 'gcal-6', dayOffset: 2, startTime: '09:00', endTime: '09:30', title: 'Did Shannon reply about slim computer?', calendar: 'Primary (schuler314)', isSoloReminder: false, location: 'Do we have a free computer?' },
-    { id: 'gcal-7', dayOffset: 2, startTime: '09:00', endTime: '10:00', title: 'Cancel Musora', calendar: 'Wife Shared (regla317)', isSoloReminder: true, location: 'Subscription Reminder' },
-    { id: 'gcal-8', dayOffset: 2, startTime: '08:00', endTime: '10:00', title: 'Dan Safety Team', calendar: 'Primary (schuler314)', isSoloReminder: false, location: 'Church Campus' },
-    { id: 'gcal-9', dayOffset: 2, startTime: '08:20', endTime: '11:00', title: 'Regla Serving - Greeting', calendar: 'Wife Shared (regla317)', isSoloReminder: false, location: 'Church Greeting Team' },
-    { id: 'gcal-10', dayOffset: 2, startTime: '08:15', endTime: '09:15', title: 'SCC Advisement- Meredith Walsh', calendar: 'Wife Shared (regla317)', isSoloReminder: true, location: '107 Community College Dr, Spartanburg' }
-  ],
+  // Populated strictly from live Google Calendar OAuth sync or .ICS file import
+  gcalEvents: [],
 
   planBlocks: [
     { id: 'pb-1', title: 'Minute 0–3: Feet on Floor & Bright Light Pulse', startTime: '05:30', durationMins: 3, category: 'morning', completed: true, dayOffset: 0 },
