@@ -92,6 +92,24 @@ export const PRAYER_CATEGORY_OPTIONS = [
 ];
 
 // =========================================================================
+// PRO TASK MANAGER CONSTANTS (HARBOR WALL LISTS)
+// =========================================================================
+export const TASK_PRIORITIES = {
+  p1: { id: 'p1', label: 'P1 Urgent', short: 'P1', rank: 1, color: '#f43f5e', softBg: 'rgba(244, 63, 94, 0.14)' },
+  p2: { id: 'p2', label: 'P2 High', short: 'P2', rank: 2, color: '#f59e0b', softBg: 'rgba(245, 158, 11, 0.14)' },
+  p3: { id: 'p3', label: 'P3 Normal', short: 'P3', rank: 3, color: '#38bdf8', softBg: 'rgba(56, 189, 248, 0.14)' },
+  p4: { id: 'p4', label: 'P4 Low', short: 'P4', rank: 4, color: '#94a3b8', softBg: 'rgba(148, 163, 184, 0.12)' }
+};
+
+export const TASK_RECURRENCE_OPTIONS = [
+  { id: 'none', label: 'One-Time (No Repeat)' },
+  { id: 'daily', label: 'Every Day' },
+  { id: 'weekdays', label: 'Weekdays (Mon–Fri)' },
+  { id: 'weekly', label: 'Every Week' },
+  { id: 'monthly', label: 'Every Month' }
+];
+
+// =========================================================================
 // LIVE DATE HELPERS
 // =========================================================================
 export function getLocalIsoDate(offsetDays = 0) {
@@ -101,6 +119,35 @@ export function getLocalIsoDate(offsetDays = 0) {
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   return `${yyyy}-${mm}-${dd}`;
+}
+
+export function addDaysToIsoDate(isoDate, deltaDays) {
+  const base = isoDate && /^\d{4}-\d{2}-\d{2}$/.test(isoDate) ? isoDate : getLocalIsoDate(0);
+  const [y, m, d] = base.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + deltaDays);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+
+export function getNextRecurrenceDate(baseIsoDate, recurrence) {
+  const base = baseIsoDate && /^\d{4}-\d{2}-\d{2}$/.test(baseIsoDate) ? baseIsoDate : getLocalIsoDate(0);
+  const [y, m, d] = base.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  if (recurrence === 'daily') {
+    dt.setDate(dt.getDate() + 1);
+  } else if (recurrence === 'weekdays') {
+    dt.setDate(dt.getDate() + 1);
+    while (dt.getDay() === 0 || dt.getDay() === 6) {
+      dt.setDate(dt.getDate() + 1);
+    }
+  } else if (recurrence === 'weekly') {
+    dt.setDate(dt.getDate() + 7);
+  } else if (recurrence === 'monthly') {
+    dt.setMonth(dt.getMonth() + 1);
+  } else {
+    return null;
+  }
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 }
 
 export function getDayOffsetFromIsoDate(dateStr) {
@@ -802,7 +849,7 @@ export const JESUS_PRAYER_THEMES = [
 ];
 
 // =========================================================================
-// DEFAULT APPLICATION STATE (ZERO FAKE CALENDAR EVENTS)
+// DEFAULT APPLICATION STATE
 // =========================================================================
 export const INITIAL_STATE = {
   activeTab: 'calendar',
@@ -812,6 +859,12 @@ export const INITIAL_STATE = {
   planLocked: false,
   dailyAmccScore: 7,
   amccNoteDraft: '',
+
+  // Harbor Wall Pro Filter & Sort State
+  listFilterMode: 'all', // 'all' | 'today' | 'high' | 'scheduled' | 'recurring'
+  listSearchQuery: '',
+  listHideCompleted: false,
+  listSortBy: 'priority', // 'manual' | 'priority' | 'dueDate'
 
   // Workout & Daily Backtrack State
   workoutFilterModality: 'All',
@@ -916,6 +969,8 @@ export const INITIAL_STATE = {
     wifeFilterKeywords: ['dotti', 'musora', 'cancel', 'breakfast w/', 'advisement', 'remind', 'hair', 'nails', 'personal', 'rx'],
     gcalClientId: '974855148969-n2ejn4qosb4oreulnjljnijmkrm2lfnl.apps.googleusercontent.com',
     gcalReadOnlyScope: true,
+    gcalAutoSyncEnabled: true,
+    gcalAutoSyncMins: 15,
     lastGcalSync: 'Not synced yet',
     lastCalendarSummary: []
   },
@@ -923,14 +978,15 @@ export const INITIAL_STATE = {
   // Populated strictly from live Google Calendar OAuth sync or .ICS file import
   gcalEvents: [],
 
+  // Linked to their source routine cards for two-way board removal sync
   planBlocks: [
-    { id: 'pb-1', title: 'Minute 0–3: Feet on Floor & Bright Light Pulse', startTime: '05:30', durationMins: 3, category: 'morning', completed: true, dayOffset: 0 },
-    { id: 'pb-2', title: 'Minute 14–22: Core Temp & Synovial Tendon Ramp', startTime: '05:44', durationMins: 8, category: 'morning', completed: true, dayOffset: 0 },
-    { id: 'pb-3', title: 'Minute 22–30: First Warm-Up Set / Spin Cadence Ignition', startTime: '05:52', durationMins: 8, category: 'morning', completed: false, dayOffset: 0 },
-    { id: 'pb-4', title: 'Scripture Before Screens (No-Scroll First Hour)', startTime: '06:50', durationMins: 15, category: 'morning', completed: false, dayOffset: 0 },
-    { id: 'pb-5', title: 'Menuha Safe Harbor Block (Zero Production)', startTime: '14:30', durationMins: 20, category: 'rest', completed: false, dayOffset: 0 },
-    { id: 'pb-6', title: 'Stage Tomorrow’s Workout Clothes & Shoes', startTime: '20:30', durationMins: 5, category: 'night', completed: false, dayOffset: 0 },
-    { id: 'pb-7', title: '5-Minute Baylor Cognitive Offload', startTime: '21:40', durationMins: 5, category: 'night', completed: false, dayOffset: 0 }
+    { id: 'pb-1', title: 'Minute 0–3: Feet on Floor & Bright Light Pulse', startTime: '05:30', durationMins: 3, category: 'morning', sourceType: 'morning', sourceId: 'mw-1', completed: true, dayOffset: 0 },
+    { id: 'pb-2', title: 'Minute 14–22: Core Temp & Synovial Tendon Ramp', startTime: '05:44', durationMins: 8, category: 'morning', sourceType: 'morning', sourceId: 'mw-4', completed: true, dayOffset: 0 },
+    { id: 'pb-3', title: 'Minute 22–30: First Warm-Up Set / Spin Cadence Ignition', startTime: '05:52', durationMins: 8, category: 'morning', sourceType: 'morning', sourceId: 'mw-5', completed: false, dayOffset: 0 },
+    { id: 'pb-4', title: 'Scripture Before Screens (No-Scroll First Hour)', startTime: '06:50', durationMins: 15, category: 'morning', sourceType: 'morning', sourceId: 'mw-14', completed: false, dayOffset: 0 },
+    { id: 'pb-5', title: 'Menuha Safe Harbor Block (Zero Production)', startTime: '14:30', durationMins: 20, category: 'rest', sourceType: 'morning', sourceId: 'mw-17', completed: false, dayOffset: 0 },
+    { id: 'pb-6', title: 'Stage Tomorrow’s Workout Clothes & Shoes', startTime: '20:30', durationMins: 5, category: 'night', sourceType: 'night', sourceId: 'nw-1', completed: false, dayOffset: 0 },
+    { id: 'pb-7', title: '5-Minute Baylor Cognitive Offload', startTime: '21:40', durationMins: 5, category: 'night', sourceType: 'night', sourceId: 'nw-13', completed: false, dayOffset: 0 }
   ],
 
   lists: [
@@ -939,9 +995,57 @@ export const INITIAL_STATE = {
       title: 'Family Hub & Weekend',
       category: 'Family',
       items: [
-        { id: 'li-1', text: 'Plan weekend outdoor walk & tree check', assignedTo: 'Family', completed: false, scheduledTime: '10:00' },
-        { id: 'li-2', text: 'Play a round of Conversation Cards after dinner', assignedTo: 'All', completed: false, scheduledTime: '19:00' },
-        { id: 'li-3', text: 'Check slim computer status with Shannon', assignedTo: 'Dan', completed: false, scheduledTime: '14:00' }
+        {
+          id: 'li-1',
+          text: 'Plan weekend outdoor walk & tree check',
+          assignedTo: 'Family',
+          completed: false,
+          priority: 'p2',
+          dueDate: TODAY_ISO,
+          scheduledDate: '',
+          scheduledTime: '10:00',
+          durationMins: 45,
+          recurrence: 'weekly',
+          tags: ['outdoors', 'family'],
+          notes: 'Check Chestnut Ridge or neighborhood trail conditions.',
+          subtasks: [
+            { id: 'st-1', text: 'Pack water bottles & snacks', completed: false },
+            { id: 'st-2', text: 'Check weather radar', completed: true }
+          ],
+          watchBlockId: null
+        },
+        {
+          id: 'li-2',
+          text: 'Play a round of Conversation Cards after dinner',
+          assignedTo: 'All',
+          completed: false,
+          priority: 'p3',
+          dueDate: TODAY_ISO,
+          scheduledDate: '',
+          scheduledTime: '19:00',
+          durationMins: 20,
+          recurrence: 'none',
+          tags: ['table', 'faith'],
+          notes: '',
+          subtasks: [],
+          watchBlockId: null
+        },
+        {
+          id: 'li-3',
+          text: 'Check slim computer status with Shannon',
+          assignedTo: 'Dan',
+          completed: false,
+          priority: 'p2',
+          dueDate: TOMORROW_ISO,
+          scheduledDate: '',
+          scheduledTime: '14:00',
+          durationMins: 15,
+          recurrence: 'none',
+          tags: ['follow-up'],
+          notes: '',
+          subtasks: [],
+          watchBlockId: null
+        }
       ]
     },
     {
@@ -949,9 +1053,54 @@ export const INITIAL_STATE = {
       title: 'Groceries & Galley',
       category: 'Groceries',
       items: [
-        { id: 'li-4', text: 'Whole bean coffee & sparkling water', assignedTo: 'Shared', completed: false, scheduledTime: '16:00' },
-        { id: 'li-5', text: 'High-protein breakfast staples (eggs, Greek yogurt)', assignedTo: 'Shared', completed: false, scheduledTime: '16:00' },
-        { id: 'li-6', text: 'Magnesium glycinate & chamomile night tea', assignedTo: 'Dan', completed: true, scheduledTime: '16:00' }
+        {
+          id: 'li-4',
+          text: 'Whole bean coffee & sparkling water',
+          assignedTo: 'Shared',
+          completed: false,
+          priority: 'p3',
+          dueDate: '',
+          scheduledDate: '',
+          scheduledTime: '16:00',
+          durationMins: 30,
+          recurrence: 'weekly',
+          tags: ['costco'],
+          notes: '',
+          subtasks: [],
+          watchBlockId: null
+        },
+        {
+          id: 'li-5',
+          text: 'High-protein breakfast staples (eggs, Greek yogurt)',
+          assignedTo: 'Shared',
+          completed: false,
+          priority: 'p2',
+          dueDate: TOMORROW_ISO,
+          scheduledDate: '',
+          scheduledTime: '16:00',
+          durationMins: 30,
+          recurrence: 'weekly',
+          tags: ['nutrition'],
+          notes: '',
+          subtasks: [],
+          watchBlockId: null
+        },
+        {
+          id: 'li-6',
+          text: 'Magnesium glycinate & chamomile night tea',
+          assignedTo: 'Dan',
+          completed: true,
+          priority: 'p4',
+          dueDate: '',
+          scheduledDate: '',
+          scheduledTime: '16:00',
+          durationMins: 15,
+          recurrence: 'none',
+          tags: ['sleep'],
+          notes: '',
+          subtasks: [],
+          watchBlockId: null
+        }
       ]
     },
     {
@@ -959,8 +1108,38 @@ export const INITIAL_STATE = {
       title: 'House, Yard & Workbench',
       category: 'Workbench',
       items: [
-        { id: 'li-7', text: 'Inspect yard drainage and mulch around young trees', assignedTo: 'Dan', completed: false, scheduledTime: '15:30' },
-        { id: 'li-8', text: 'Organize garage tool bench & charging station', assignedTo: 'Dan', completed: false, scheduledTime: '16:30' }
+        {
+          id: 'li-7',
+          text: 'Inspect yard drainage and mulch around young trees',
+          assignedTo: 'Dan',
+          completed: false,
+          priority: 'p2',
+          dueDate: TOMORROW_ISO,
+          scheduledDate: '',
+          scheduledTime: '15:30',
+          durationMins: 45,
+          recurrence: 'none',
+          tags: ['yard', 'trees'],
+          notes: 'Check root flare clearance on newer plantings.',
+          subtasks: [],
+          watchBlockId: null
+        },
+        {
+          id: 'li-8',
+          text: 'Organize garage tool bench & charging station',
+          assignedTo: 'Dan',
+          completed: false,
+          priority: 'p3',
+          dueDate: '',
+          scheduledDate: '',
+          scheduledTime: '16:30',
+          durationMins: 60,
+          recurrence: 'none',
+          tags: ['garage'],
+          notes: '',
+          subtasks: [],
+          watchBlockId: null
+        }
       ]
     }
   ],
