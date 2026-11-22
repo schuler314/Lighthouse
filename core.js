@@ -5,12 +5,14 @@ import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 import {
   STORAGE_KEY,
   SUPABASE_CONFIG,
+  LEGACY_MOCK_GCAL_IDS,
   NAV_STATIONS,
   INITIAL_STATE,
   NIGHT_LIBRARY,
   JESUS_PRAYER_THEMES,
   TODAY_ISO,
-  getLocalIsoDate
+  getLocalIsoDate,
+  getDayOffsetFromIsoDate
 } from './data.js';
 
 // =========================================================================
@@ -21,6 +23,9 @@ const supabaseClient =
     ? createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, { db: { schema: SUPABASE_CONFIG.schema } })
     : null;
 
+const LEGACY_MOCK_SET = new Set(LEGACY_MOCK_GCAL_IDS);
+let stateMigratedOnLoad = false;
+
 export const state = loadLocalState();
 
 let currentPage = 'index.html';
@@ -29,6 +34,20 @@ let pageRenderers = {};
 let gcalAccessToken = null; // Volatile RAM-only token
 let supabaseSyncTimeout = null;
 let shellMounted = false;
+let lastRenderedIsoDate = getLocalIsoDate(0);
+
+function sanitizeGcalEvents(rawEvents) {
+  if (!Array.isArray(rawEvents)) return { events: [], changed: false };
+  const cleaned = rawEvents.filter((ev) => {
+    if (!ev || !ev.id) return false;
+    // Purge legacy hardcoded snapshot filler events (e.g., "No School")
+    if (LEGACY_MOCK_SET.has(ev.id)) return false;
+    // Purge undated events from older snapshots that relied on frozen dayOffset
+    if (!ev.dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(ev.dateStr)) return false;
+    return true;
+  });
+  return { events: cleaned, changed: cleaned.length !== rawEvents.length };
+}
 
 function buildMergedState(parsed) {
   const hasLegacySites = (parsed.codedSites || []).some((s) => (s.url || '').includes('example.com'));
@@ -43,9 +62,21 @@ function buildMergedState(parsed) {
     mergedSettings.hideShortSoloEvents = false;
     mergedSettings.soloEventsRuleMigrated = true;
   }
+
+  const { events: cleanGcalEvents, changed: gcalPurged } = sanitizeGcalEvents(parsed.gcalEvents);
+  if (gcalPurged) {
+    stateMigratedOnLoad = true;
+  }
+  if (mergedSettings.lastGcalSync === 'Nov 2026 Snapshot') {
+    mergedSettings.lastGcalSync = 'Not synced yet';
+    mergedSettings.lastCalendarSummary = [];
+    stateMigratedOnLoad = true;
+  }
+
   return {
     ...structuredClone(INITIAL_STATE),
     ...parsed,
+    gcalEvents: cleanGcalEvents,
     workouts: Array.isArray(parsed.workouts) ? parsed.workouts : structuredClone(INITIAL_STATE.workouts),
     dailyHistory:
       parsed.dailyHistory && typeof parsed.dailyHistory === 'object'
@@ -135,10 +166,10 @@ async function hydrateFromSupabaseOnLoad() {
       const localRaw = localStorage.getItem(STORAGE_KEY);
       if (!localRaw) {
         const merged = buildMergedState(data.state_payload);
-        // Preserve the tab currently active on this page
         merged.activeTab = state.activeTab;
         Object.assign(state, merged);
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        if (stateMigratedOnLoad) saveState();
         renderApp();
       }
     }
@@ -170,6 +201,12 @@ export function escapeHtml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+// Always compute a calendar event's offset dynamically against today's real date
+export function getEventDayOffset(ev) {
+  if (!ev || !ev.dateStr) return null;
+  return getDayOffsetFromIsoDate(ev.dateStr);
 }
 
 export function isEventMuted(ev) {
@@ -255,7 +292,7 @@ function mountAppShell() {
             </div>
             <div>
               <h3 class="font-bold text-base lh-text-main">Google Calendar Sync</h3>
-              <p class="text-xs lh-text-sec">Live OAuth 2.0 (Primary, Family & Regla’s Calendars)</p>
+              <p class="text-xs lh-text-sec">Live OAuth 2.0 (Primary, Family &amp; Regla’s Calendars)</p>
             </div>
           </div>
           <button onclick="window.Lighthouse.closeGcalModal()" class="p-2 rounded-xl lh-elevated lh-text-sec">
@@ -264,12 +301,12 @@ function mountAppShell() {
         </div>
 
         <div class="p-4 rounded-2xl lh-elevated space-y-3">
-          <div class="flex items-center justify-between">
+          <div class="flex items-center justify-between gap-2">
             <span class="text-xs font-bold uppercase tracking-wider" style="color: var(--accent-primary);">Option 1: Live Google OAuth</span>
             <span id="gcal-token-badge" class="text-[11px] px-2 py-0.5 rounded-full lh-badge-sec font-medium">Client ID Pre-Loaded</span>
           </div>
           <p class="text-xs lh-text-sec leading-relaxed">
-            Pulls live events from your Primary (<code>schuler314</code>), Family, and Regla's shared calendars (<code>regla317</code> &amp; <code>reglaschuler</code>) and applies your keyword Fog Filter rules.
+            Pulls real dated events (next 14 days) from your Primary (<code>schuler314</code>), Family, and Regla's shared calendars (<code>regla317</code> &amp; <code>reglaschuler</code>) and applies your keyword Fog Filter rules.
           </p>
           <div class="space-y-1">
             <label class="text-[11px] font-semibold lh-text-sec block">Google Web OAuth Client ID:</label>
@@ -294,17 +331,22 @@ function mountAppShell() {
             <input id="toggle-gcal-readonly" type="checkbox" onchange="window.Lighthouse.updateSetting('gcalReadOnlyScope', this.checked)" class="w-4 h-4" />
           </label>
 
-          <button onclick="window.Lighthouse.connectGoogleOAuth()" class="w-full py-3 rounded-xl lh-btn-primary text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md">
-            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
-            <span>Sign In &amp; Sync All Calendars Now</span>
-          </button>
+          <div class="flex items-center gap-2">
+            <button onclick="window.Lighthouse.connectGoogleOAuth()" class="flex-1 py-3 rounded-xl lh-btn-primary text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md">
+              <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+              <span>Sign In &amp; Sync All Calendars Now</span>
+            </button>
+            <button onclick="window.Lighthouse.clearGcalEvents()" class="py-3 px-3 rounded-xl lh-surface lh-text-sec hover:lh-text-main text-xs font-semibold shrink-0" title="Remove cached calendar events">
+              Clear Cache
+            </button>
+          </div>
 
           <div id="gcal-sync-diagnostics" class="p-3 rounded-xl lh-surface text-xs space-y-1.5 hidden"></div>
         </div>
 
         <div class="p-4 rounded-2xl lh-elevated space-y-2.5">
           <span class="text-xs font-bold uppercase tracking-wider lh-text-main block">Option 2: Load .ICS Calendar File</span>
-          <p class="text-xs lh-text-sec">Import any <code>.ics</code> file directly from your phone without configuring OAuth.</p>
+          <p class="text-xs lh-text-sec">Import any <code>.ics</code> file directly from your phone without configuring OAuth (parses exact event dates &amp; times).</p>
           <label class="w-full py-2.5 px-4 rounded-xl lh-surface lh-text-main font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer hover:opacity-90">
             <i data-lucide="upload" class="w-4 h-4" style="color: var(--accent-primary);"></i>
             <span>Choose .ICS File</span>
@@ -573,6 +615,7 @@ export function renderNavigation() {
 // MASTER RENDER DISPATCHER
 // =========================================================================
 export function renderApp() {
+  lastRenderedIsoDate = getLocalIsoDate(0);
   renderNavigation();
   const viewport = document.getElementById('app-viewport');
   if (!viewport) return;
@@ -982,6 +1025,7 @@ export function buildPrintableBinderSheetHtml() {
     })
     .join('');
 
+  const sheetDateNow = cfg.sheetDate || getLocalIsoDate(0);
   const headerBannerHtml = `
     <div style="border-bottom: 2px solid #0f172a; padding-bottom: 6px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: flex-end; background: #ffffff;">
       <div>
@@ -993,7 +1037,7 @@ export function buildPrintableBinderSheetHtml() {
         </h1>
       </div>
       <div style="text-align: right; font-size: 9.5px; color: #0f172a; font-family: monospace;">
-        <div><strong>Date:</strong> ${escapeHtml(cfg.sheetDate || TODAY_ISO)}</div>
+        <div><strong>Date:</strong> ${escapeHtml(sheetDateNow)}</div>
         <div><strong>Keeper:</strong> ${escapeHtml(state.settings.userName || 'Dan')}</div>
       </div>
     </div>
@@ -1014,7 +1058,7 @@ export function buildPrintableBinderSheetHtml() {
             <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #0f172a;">
               III. Captain’s Log — Screen-Free Evening Writing Spread (Page 2)
             </span>
-            <span style="font-size: 9.5px; font-family: monospace; color: #475569;">Date: ${escapeHtml(cfg.sheetDate)} • Keeper: ${escapeHtml(state.settings.userName || 'Dan')}</span>
+            <span style="font-size: 9.5px; font-family: monospace; color: #475569;">Date: ${escapeHtml(sheetDateNow)} • Keeper: ${escapeHtml(state.settings.userName || 'Dan')}</span>
           </div>
           ${journalBlocksHtml}
         </div>
@@ -1359,6 +1403,44 @@ function renderPdfBuilderModalContent() {
 }
 
 // =========================================================================
+// ICS DATE PARSER HELPER (SUPPORTS ALL-DAY, LOCAL & UTC TIMESTAMPS)
+// =========================================================================
+function parseIcsDateValue(rawVal) {
+  if (!rawVal) return null;
+  const cleaned = rawVal.trim();
+  // All-day format: YYYYMMDD
+  if (/^\d{8}$/.test(cleaned)) {
+    const y = Number(cleaned.slice(0, 4));
+    const m = Number(cleaned.slice(4, 6));
+    const d = Number(cleaned.slice(6, 8));
+    return {
+      date: new Date(y, m - 1, d, 8, 0, 0),
+      dateStr: `${cleaned.slice(0, 4)}-${cleaned.slice(4, 6)}-${cleaned.slice(6, 8)}`,
+      isAllDay: true
+    };
+  }
+  // Date-time format: YYYYMMDDTHHMMSS(Z)
+  const dtMatch = cleaned.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/);
+  if (dtMatch) {
+    const [, yy, mm, dd, hh, mi, ss, isUtc] = dtMatch;
+    const dt = isUtc
+      ? new Date(Date.UTC(Number(yy), Number(mm) - 1, Number(dd), Number(hh), Number(mi), Number(ss)))
+      : new Date(Number(yy), Number(mm) - 1, Number(dd), Number(hh), Number(mi), Number(ss));
+    const dateStr = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    return {
+      date: dt,
+      dateStr,
+      isAllDay: false
+    };
+  }
+  return null;
+}
+
+function formatDateObjIso(dt) {
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+
+// =========================================================================
 // SHARED GLOBAL ACTIONS (AVAILABLE ON ALL 3 HTML PAGES)
 // =========================================================================
 const sharedActions = {
@@ -1369,7 +1451,6 @@ const sharedActions = {
     state.activeTab = targetStation.id;
     saveState();
 
-    // Navigate across HTML files when the target station lives on another page
     if (targetStation.page !== currentPage) {
       window.location.href = `${targetStation.page}?tab=${encodeURIComponent(targetStation.id)}`;
       return;
@@ -1399,7 +1480,11 @@ const sharedActions = {
 
   // Analog Night Watch & 3-Hole Binder PDF Studio
   openPdfBuilder() {
-    state.pdfConfig = { ...structuredClone(INITIAL_STATE.pdfConfig), ...(state.pdfConfig || {}) };
+    state.pdfConfig = {
+      ...structuredClone(INITIAL_STATE.pdfConfig),
+      ...(state.pdfConfig || {}),
+      sheetDate: getLocalIsoDate(0)
+    };
     const modal = document.getElementById('pdf-builder-modal');
     if (!modal) return;
     modal.classList.remove('hidden');
@@ -1553,7 +1638,7 @@ const sharedActions = {
       return this.triggerNativePrint();
     }
     showToast('Generating Ink-Saver 3-Hole Binder PDF...');
-    const dateStr = state.pdfConfig?.sheetDate || TODAY_ISO;
+    const dateStr = state.pdfConfig?.sheetDate || getLocalIsoDate(0);
     const opt = {
       margin: [0.15, 0.15, 0.15, 0.15],
       filename: `Lighthouse-Night-Binder-${dateStr}.pdf`,
@@ -1601,6 +1686,18 @@ const sharedActions = {
     if (!modal) return;
     modal.classList.add('hidden');
     modal.classList.remove('flex');
+  },
+
+  clearGcalEvents() {
+    state.gcalEvents = [];
+    state.settings.lastGcalSync = 'Cleared (Not synced)';
+    state.settings.lastCalendarSummary = [];
+    saveState();
+    renderApp();
+    this.renderGcalDiagnostics(
+      '<span class="lh-text-sec font-medium">Cleared all cached calendar events. Click "Sign In &amp; Sync" to pull fresh events from Google Calendar.</span>'
+    );
+    showToast('Cleared cached calendar events!');
   },
 
   showOriginCopied() {
@@ -1751,14 +1848,9 @@ const sharedActions = {
       const events = [];
       const calendarSummary = [];
 
-      const parseGoogleDateLocal = (dtObj) => {
-        if (!dtObj) return null;
-        if (dtObj.dateTime) return new Date(dtObj.dateTime);
-        if (dtObj.date) {
-          const [y, m, d] = dtObj.date.split('-').map(Number);
-          return new Date(y, m - 1, d, 8, 0, 0);
-        }
-        return null;
+      const parseLocalDateOnly = (isoDate) => {
+        const [y, m, d] = isoDate.split('-').map(Number);
+        return new Date(y, m - 1, d);
       };
 
       for (const cal of calendarsToQuery) {
@@ -1791,37 +1883,68 @@ const sharedActions = {
 
         for (const item of evData.items || []) {
           if (item.status === 'cancelled') continue;
-          const startD = parseGoogleDateLocal(item.start);
-          if (!startD) continue;
-          const endD = parseGoogleDateLocal(item.end) || startD;
 
-          const dayMid = new Date(startD.getFullYear(), startD.getMonth(), startD.getDate());
-          const dayOffset = Math.round((dayMid - startOfToday) / 86400000);
-          if (dayOffset < 0) continue;
+          // Case A: All-day event (Google uses exclusive end.date)
+          if (item.start?.date && !item.start?.dateTime) {
+            const startDay = parseLocalDateOnly(item.start.date);
+            const endExclusive = item.end?.date
+              ? parseLocalDateOnly(item.end.date)
+              : new Date(startDay.getTime() + 86400000);
 
-          const isAllDay = Boolean(item.start?.date && !item.start?.dateTime);
-          const dateStr = `${dayMid.getFullYear()}-${String(dayMid.getMonth() + 1).padStart(2, '0')}-${String(dayMid.getDate()).padStart(2, '0')}`;
+            const cursor = new Date(Math.max(startDay.getTime(), startOfToday.getTime()));
+            while (cursor < endExclusive && cursor < endHorizon) {
+              const dateStr = formatDateObjIso(cursor);
+              const dayOffset = getDayOffsetFromIsoDate(dateStr);
+              if (dayOffset !== null && dayOffset >= 0) {
+                events.push({
+                  id: `gcal-${cal.id}-${item.id}-${dateStr}`,
+                  dayOffset,
+                  dateStr,
+                  startTime: '08:00',
+                  endTime: 'All Day',
+                  title: item.summary || '(Busy / No Title)',
+                  calendar: calLabel,
+                  isSoloReminder: false,
+                  location: item.location || ''
+                });
+                calEventCount++;
+              }
+              cursor.setDate(cursor.getDate() + 1);
+            }
+            continue;
+          }
 
-          events.push({
-            id: `gcal-${cal.id}-${item.id}`,
-            dayOffset,
-            dateStr,
-            startTime: isAllDay ? '08:00' : startD.toTimeString().slice(0, 5),
-            endTime: isAllDay ? 'All Day' : endD.toTimeString().slice(0, 5),
-            title: item.summary || '(Busy / No Title)',
-            calendar: calLabel,
-            isSoloReminder: false,
-            location: item.location || ''
-          });
-          calEventCount++;
+          // Case B: Timed event
+          if (item.start?.dateTime) {
+            const startD = new Date(item.start.dateTime);
+            const endD = item.end?.dateTime ? new Date(item.end.dateTime) : startD;
+            if (endD < startOfToday) continue;
+
+            const dateStr = formatDateObjIso(startD);
+            const dayOffset = getDayOffsetFromIsoDate(dateStr);
+            if (dayOffset === null || dayOffset < 0) continue;
+
+            events.push({
+              id: `gcal-${cal.id}-${item.id}`,
+              dayOffset,
+              dateStr,
+              startTime: startD.toTimeString().slice(0, 5),
+              endTime: endD.toTimeString().slice(0, 5),
+              title: item.summary || '(Busy / No Title)',
+              calendar: calLabel,
+              isSoloReminder: false,
+              location: item.location || ''
+            });
+            calEventCount++;
+          }
         }
 
         calendarSummary.push({ label: calLabel, count: calEventCount });
       }
 
-      events.sort((a, b) => a.dayOffset - b.dayOffset || a.startTime.localeCompare(b.startTime));
+      events.sort((a, b) => a.dateStr.localeCompare(b.dateStr) || a.startTime.localeCompare(b.startTime));
       state.gcalEvents = events;
-      state.settings.lastGcalSync = `Live Sync • ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      state.settings.lastGcalSync = `Live Sync • ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
       state.settings.lastCalendarSummary = calendarSummary;
       saveState();
       renderApp();
@@ -1845,32 +1968,48 @@ const sharedActions = {
       const raw = e.target.result || '';
       const chunks = raw.split('BEGIN:VEVENT').slice(1);
       const parsed = [];
-      chunks.slice(0, 40).forEach((chunk, idx) => {
+      chunks.forEach((chunk, idx) => {
         const getLine = (k) => {
           const m = chunk.match(new RegExp(`^${k}[^:]*:(.*)$`, 'm'));
           return m ? m[1].trim() : '';
         };
         const summary = getLine('SUMMARY');
-        if (summary) {
-          parsed.push({
-            id: `ics-${Date.now()}-${idx}`,
-            dayOffset: 0,
-            startTime: '09:00',
-            endTime: '10:00',
-            title: summary,
-            calendar: 'Imported .ICS',
-            isSoloReminder: false,
-            location: getLine('LOCATION')
-          });
-        }
+        const startParsed = parseIcsDateValue(getLine('DTSTART'));
+        const endParsed = parseIcsDateValue(getLine('DTEND'));
+        if (!summary || !startParsed) return;
+
+        const dayOffset = getDayOffsetFromIsoDate(startParsed.dateStr);
+        if (dayOffset === null || dayOffset < 0 || dayOffset > 30) return;
+
+        parsed.push({
+          id: `ics-${Date.now()}-${idx}`,
+          dayOffset,
+          dateStr: startParsed.dateStr,
+          startTime: startParsed.isAllDay ? '08:00' : startParsed.date.toTimeString().slice(0, 5),
+          endTime: startParsed.isAllDay
+            ? 'All Day'
+            : endParsed
+            ? endParsed.date.toTimeString().slice(0, 5)
+            : '10:00',
+          title: summary,
+          calendar: 'Imported .ICS',
+          isSoloReminder: false,
+          location: getLine('LOCATION')
+        });
       });
-      if (parsed.length > 0) {
-        state.gcalEvents = [...parsed, ...state.gcalEvents];
-        saveState();
-        renderApp();
-        this.closeGcalModal();
-        showToast(`Imported ${parsed.length} events from .ICS file!`);
-      }
+
+      parsed.sort((a, b) => a.dateStr.localeCompare(b.dateStr) || a.startTime.localeCompare(b.startTime));
+      state.gcalEvents = parsed;
+      state.settings.lastGcalSync = `.ICS Import • ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+      state.settings.lastCalendarSummary = [{ label: 'Imported .ICS', count: parsed.length }];
+      saveState();
+      renderApp();
+      this.closeGcalModal();
+      showToast(
+        parsed.length > 0
+          ? `Imported ${parsed.length} upcoming events from .ICS file!`
+          : 'No upcoming events (next 30 days) found in that .ICS file.'
+      );
     };
     reader.readAsText(file);
   }
@@ -1884,13 +2023,11 @@ export function initLighthousePage({ page, defaultTab, renderers, actions = {} }
   currentDefaultTab = defaultTab;
   pageRenderers = renderers || {};
 
-  // Merge shared actions + page-specific actions onto window.Lighthouse
   window.Lighthouse = {
     ...sharedActions,
     ...actions
   };
 
-  // Resolve active tab from URL ?tab=... first, else saved tab if it belongs to this page
   const urlTabRaw = new URLSearchParams(window.location.search).get('tab');
   const urlTab = urlTabRaw === 'watchtower' ? 'calendar' : urlTabRaw;
   if (urlTab && pageRenderers[urlTab]) {
@@ -1901,6 +2038,11 @@ export function initLighthousePage({ page, defaultTab, renderers, actions = {} }
 
   const boot = () => {
     mountAppShell();
+    // If legacy mock calendar events were purged on load, persist the clean state immediately
+    if (stateMigratedOnLoad) {
+      saveState();
+      stateMigratedOnLoad = false;
+    }
     renderApp();
     hydrateFromSupabaseOnLoad();
   };
@@ -1911,7 +2053,6 @@ export function initLighthousePage({ page, defaultTab, renderers, actions = {} }
     boot();
   }
 
-  // Support browser Back/Forward navigation between tabs on the same HTML page
   window.addEventListener('popstate', () => {
     const param = new URLSearchParams(window.location.search).get('tab');
     const resolved = param === 'watchtower' ? 'calendar' : param;
@@ -1919,7 +2060,13 @@ export function initLighthousePage({ page, defaultTab, renderers, actions = {} }
     renderApp();
   });
 
-  // Sync changes if multiple browser tabs of Lighthouse are open
+  // Automatically refresh if the user returns to the app after midnight
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && getLocalIsoDate(0) !== lastRenderedIsoDate) {
+      renderApp();
+    }
+  });
+
   window.addEventListener('storage', (ev) => {
     if (ev.key === STORAGE_KEY && ev.newValue) {
       try {
