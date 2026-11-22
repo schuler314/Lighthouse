@@ -40,6 +40,16 @@
       initLighthousePage
     } from './core.js';
 
+    function isCardScheduledToday(sourceType, sourceId) {
+      const todayIso = getLocalIsoDate(0);
+      return (state.planBlocks || []).some(
+        (b) =>
+          b.sourceType === sourceType &&
+          b.sourceId === sourceId &&
+          (b.dateStr ? b.dateStr === todayIso : b.dayOffset === 0)
+      );
+    }
+
     // =========================================================================
     // STATION 4: MORNING WATCH & REST (ACTIVE BOARD + 22 CATEGORIZED CARDS)
     // =========================================================================
@@ -75,7 +85,7 @@
                   <span class="text-xs font-mono-code lh-text-sec">${activeBoardCards.length} cards • ${totalBoardMins} mins total</span>
                 </div>
                 <h3 class="text-lg sm:text-xl font-bold lh-text-main mt-1">My Morning Watch &amp; 30-Min Workout Ramp</h3>
-                <p class="text-xs lh-text-sec">Tap any card to inspect the neuroscience &amp; Scripture modal, or push your entire board to today’s 24h Watchtower.</p>
+                <p class="text-xs lh-text-sec">Synced two-way with your 24h Watchtower: removing a Morning block from Watchtower removes it here too.</p>
               </div>
               <div class="flex flex-wrap gap-2">
                 <button onclick="window.Lighthouse.load30MinWorkoutPreset()"
@@ -96,31 +106,35 @@
                 ? `<p class="text-xs lh-text-sec py-4 text-center">Your Morning Board is empty. Tap "+ Board" on any card below to build your sequence.</p>`
                 : `<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     ${activeBoardCards
-                      .map(
-                        (c) => `
-                        <div class="p-3.5 rounded-xl lh-elevated flex flex-col justify-between gap-3">
-                          <div onclick="window.Lighthouse.openMorningDetail('${c.id}')" class="cursor-pointer space-y-1.5">
-                            <div class="flex items-center justify-between gap-2">
-                              <span class="text-[10px] font-semibold uppercase tracking-wider" style="color: var(--accent-primary);">${escapeHtml(c.category)}</span>
-                              <span class="text-xs font-mono-code lh-text-sec">${escapeHtml(c.defaultTime)} • ${c.durationMins}m</span>
+                      .map((c) => {
+                        const onWatch = isCardScheduledToday('morning', c.id);
+                        return `
+                          <div class="p-3.5 rounded-xl lh-elevated flex flex-col justify-between gap-3">
+                            <div onclick="window.Lighthouse.openMorningDetail('${c.id}')" class="cursor-pointer space-y-1.5">
+                              <div class="flex items-center justify-between gap-2">
+                                <span class="text-[10px] font-semibold uppercase tracking-wider" style="color: var(--accent-primary);">${escapeHtml(c.category)}</span>
+                                <span class="text-xs font-mono-code lh-text-sec">${escapeHtml(c.defaultTime)} • ${c.durationMins}m</span>
+                              </div>
+                              <h4 class="font-bold text-sm lh-text-main leading-snug">${escapeHtml(c.title)}</h4>
+                              <p class="text-xs lh-text-sec line-clamp-2">${escapeHtml(c.summary)}</p>
                             </div>
-                            <h4 class="font-bold text-sm lh-text-main leading-snug">${escapeHtml(c.title)}</h4>
-                            <p class="text-xs lh-text-sec line-clamp-2">${escapeHtml(c.summary)}</p>
-                          </div>
-                          <div class="flex items-center justify-between pt-2 border-t lh-border">
-                            <button onclick="window.Lighthouse.openMorningDetail('${c.id}')" class="text-[11px] font-semibold lh-text-sec hover:lh-text-main flex items-center gap-1">
-                              <i data-lucide="book-open" class="w-3 h-3"></i> Science &amp; Scripture
-                            </button>
-                            <div class="flex items-center gap-1">
-                              <button onclick="window.Lighthouse.pushCardToWatch('${c.id}', 'morning')" class="px-2 py-1 rounded-lg lh-btn-soft text-[11px]">+ 24h</button>
-                              <button onclick="window.Lighthouse.toggleMorningBoard('${c.id}')" class="p-1 rounded-lg lh-text-muted hover:lh-text-main" title="Remove from Board">
-                                <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                            <div class="flex items-center justify-between pt-2 border-t lh-border">
+                              <button onclick="window.Lighthouse.openMorningDetail('${c.id}')" class="text-[11px] font-semibold lh-text-sec hover:lh-text-main flex items-center gap-1">
+                                <i data-lucide="book-open" class="w-3 h-3"></i> Science &amp; Scripture
                               </button>
+                              <div class="flex items-center gap-1">
+                                <button onclick="window.Lighthouse.pushCardToWatch('${c.id}', 'morning')"
+                                  class="px-2 py-1 rounded-lg text-[11px] font-semibold ${onWatch ? 'lh-badge-success' : 'lh-btn-soft'}">
+                                  ${onWatch ? '✓ On 24h' : '+ 24h'}
+                                </button>
+                                <button onclick="window.Lighthouse.toggleMorningBoard('${c.id}')" class="p-1 rounded-lg lh-text-muted hover:lh-text-main" title="Remove from Board & 24h Watch">
+                                  <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                                </button>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      `
-                      )
+                        `;
+                      })
                       .join('')}
                   </div>`
             }
@@ -152,6 +166,7 @@
               ${filteredLibrary
                 .map((c) => {
                   const onBoard = (state.morningBoardIds || []).includes(c.id);
+                  const onWatch = isCardScheduledToday('morning', c.id);
                   return `
                     <div class="lh-surface rounded-2xl p-4 flex flex-col justify-between gap-3 transition hover:border-opacity-80">
                       <div onclick="window.Lighthouse.openMorningDetail('${c.id}')" class="cursor-pointer space-y-2">
@@ -175,8 +190,8 @@
                             ${onBoard ? '✓ On Board' : '+ Board'}
                           </button>
                           <button onclick="window.Lighthouse.pushCardToWatch('${c.id}', 'morning')"
-                            class="px-2.5 py-1 rounded-lg lh-btn-primary text-xs">
-                            + 24h
+                            class="px-2.5 py-1 rounded-lg text-xs font-semibold ${onWatch ? 'lh-badge-success' : 'lh-btn-primary'}">
+                            ${onWatch ? '✓ 24h' : '+ 24h'}
                           </button>
                         </div>
                       </div>
@@ -235,7 +250,7 @@
               <div>
                 <span class="text-[11px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full lh-badge-sec">Active Evening Sequence</span>
                 <h3 class="text-lg sm:text-xl font-bold lh-text-main mt-1">My Night Watch Wind-Down Board (${activeNightBoard.length} Cards)</h3>
-                <p class="text-xs lh-text-sec">Ordered from Sunset Transition (90m out) to Final Harbor (pillow).</p>
+                <p class="text-xs lh-text-sec">Synced two-way with your 24h Watchtower: deleting a Night block from Watchtower removes it here too.</p>
               </div>
               <div class="flex flex-wrap items-center gap-2">
                 <button onclick="window.Lighthouse.openPdfBuilder()"
@@ -251,31 +266,41 @@
               </div>
             </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              ${activeNightBoard
-                .map(
-                  (c) => `
-                  <div class="p-3.5 rounded-xl lh-elevated flex flex-col justify-between gap-2.5">
-                    <div onclick="window.Lighthouse.openNightDetail('${c.id}')" class="cursor-pointer space-y-1">
-                      <div class="flex items-center justify-between text-[10px] font-semibold lh-text-sec">
-                        <span class="truncate" style="color: var(--secondary-accent);">${escapeHtml(c.stage.split(':')[0])}</span>
-                        <span class="font-mono-code">${escapeHtml(c.defaultTime)} • ${c.durationMins}m</span>
-                      </div>
-                      <h4 class="font-bold text-sm lh-text-main">${escapeHtml(c.title)}</h4>
-                      <p class="text-xs lh-text-sec line-clamp-2">${escapeHtml(c.summary)}</p>
-                    </div>
-                    <div class="flex items-center justify-between pt-2 border-t lh-border">
-                      <button onclick="window.Lighthouse.openNightDetail('${c.id}')" class="text-[11px] font-semibold lh-text-sec hover:lh-text-main">Details</button>
-                      <div class="flex items-center gap-1">
-                        <button onclick="window.Lighthouse.pushCardToWatch('${c.id}', 'night')" class="px-2 py-1 rounded-lg lh-btn-soft text-[11px]">+ 24h</button>
-                        <button onclick="window.Lighthouse.toggleNightBoard('${c.id}')" class="p-1 lh-text-muted hover:lh-text-main"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
-                      </div>
-                    </div>
-                  </div>
-                `
-                )
-                .join('')}
-            </div>
+            ${
+              activeNightBoard.length === 0
+                ? `<p class="text-xs lh-text-sec py-4 text-center">Your Night Watch Board is empty. Tap "+ Board" on any card below to add evening habits.</p>`
+                : `<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    ${activeNightBoard
+                      .map((c) => {
+                        const onWatch = isCardScheduledToday('night', c.id);
+                        return `
+                          <div class="p-3.5 rounded-xl lh-elevated flex flex-col justify-between gap-2.5">
+                            <div onclick="window.Lighthouse.openNightDetail('${c.id}')" class="cursor-pointer space-y-1">
+                              <div class="flex items-center justify-between text-[10px] font-semibold lh-text-sec">
+                                <span class="truncate" style="color: var(--secondary-accent);">${escapeHtml(c.stage.split(':')[0])}</span>
+                                <span class="font-mono-code">${escapeHtml(c.defaultTime)} • ${c.durationMins}m</span>
+                              </div>
+                              <h4 class="font-bold text-sm lh-text-main">${escapeHtml(c.title)}</h4>
+                              <p class="text-xs lh-text-sec line-clamp-2">${escapeHtml(c.summary)}</p>
+                            </div>
+                            <div class="flex items-center justify-between pt-2 border-t lh-border">
+                              <button onclick="window.Lighthouse.openNightDetail('${c.id}')" class="text-[11px] font-semibold lh-text-sec hover:lh-text-main">Details</button>
+                              <div class="flex items-center gap-1">
+                                <button onclick="window.Lighthouse.pushCardToWatch('${c.id}', 'night')"
+                                  class="px-2 py-1 rounded-lg text-[11px] font-semibold ${onWatch ? 'lh-badge-success' : 'lh-btn-soft'}">
+                                  ${onWatch ? '✓ On 24h' : '+ 24h'}
+                                </button>
+                                <button onclick="window.Lighthouse.toggleNightBoard('${c.id}')" class="p-1 lh-text-muted hover:lh-text-main" title="Remove from Board & 24h Watch">
+                                  <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        `;
+                      })
+                      .join('')}
+                  </div>`
+            }
           </div>
 
           <!-- STAGE-CATEGORIZED NIGHT WATCH LIBRARY (18 CARDS) -->
@@ -304,6 +329,7 @@
                 .map((c) => {
                   const onBoard = (state.nightBoardIds || []).includes(c.id);
                   const onPrint = (state.pdfConfig?.selectedNightCardIds || []).includes(c.id);
+                  const onWatch = isCardScheduledToday('night', c.id);
                   return `
                     <div class="lh-surface rounded-2xl p-4 flex flex-col justify-between gap-3">
                       <div onclick="window.Lighthouse.openNightDetail('${c.id}')" class="cursor-pointer space-y-2">
@@ -326,7 +352,10 @@
                             class="px-2 py-1 rounded-lg text-xs font-semibold ${onBoard ? 'lh-badge-success' : 'lh-elevated lh-text-main'}">
                             ${onBoard ? '✓ Board' : '+ Board'}
                           </button>
-                          <button onclick="window.Lighthouse.pushCardToWatch('${c.id}', 'night')" class="px-2 py-1 rounded-lg lh-btn-primary text-xs">+ 24h</button>
+                          <button onclick="window.Lighthouse.pushCardToWatch('${c.id}', 'night')"
+                            class="px-2 py-1 rounded-lg text-xs font-semibold ${onWatch ? 'lh-badge-success' : 'lh-btn-primary'}">
+                            ${onWatch ? '✓ 24h' : '+ 24h'}
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -739,36 +768,38 @@
                 ? `<p class="text-xs lh-text-sec py-4 text-center">No cards pinned to your Active Prayer Board yet. Use the Quick-Add bar above or tap "+ Pin Board" on any card below.</p>`
                 : `<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     ${activeBoardCards
-                      .map(
-                        (c) => `
-                        <div class="p-3.5 rounded-xl lh-elevated flex flex-col justify-between gap-3">
-                          <div onclick="window.Lighthouse.openPrayerCardDetail('${c.id}')" class="cursor-pointer space-y-1.5">
-                            <div class="flex items-center justify-between gap-1.5">
-                              <span class="text-[10px] font-semibold uppercase tracking-wider truncate" style="color: var(--accent-primary);">${escapeHtml(c.category)}</span>
-                              <span class="text-[10px] font-mono-code lh-text-sec shrink-0">${c.prayedCount || 0}x</span>
+                      .map((c) => {
+                        const onWatch = isCardScheduledToday('prayer', c.id);
+                        return `
+                          <div class="p-3.5 rounded-xl lh-elevated flex flex-col justify-between gap-3">
+                            <div onclick="window.Lighthouse.openPrayerCardDetail('${c.id}')" class="cursor-pointer space-y-1.5">
+                              <div class="flex items-center justify-between gap-1.5">
+                                <span class="text-[10px] font-semibold uppercase tracking-wider truncate" style="color: var(--accent-primary);">${escapeHtml(c.category)}</span>
+                                <span class="text-[10px] font-mono-code lh-text-sec shrink-0">${c.prayedCount || 0}x</span>
+                              </div>
+                              <h4 class="font-bold text-sm lh-text-main leading-snug">${escapeHtml(c.title)}</h4>
+                              <p class="text-[11px] font-mono-code lh-text-sec">${escapeHtml(c.scriptureTag || '')}</p>
+                              <p class="text-xs lh-text-sec line-clamp-2">${escapeHtml(c.notes || '')}</p>
                             </div>
-                            <h4 class="font-bold text-sm lh-text-main leading-snug">${escapeHtml(c.title)}</h4>
-                            <p class="text-[11px] font-mono-code lh-text-sec">${escapeHtml(c.scriptureTag || '')}</p>
-                            <p class="text-xs lh-text-sec line-clamp-2">${escapeHtml(c.notes || '')}</p>
+                            <div class="pt-2 border-t lh-border flex items-center justify-between gap-1.5">
+                              <button onclick="window.Lighthouse.prayForCard('${c.id}')"
+                                class="flex-1 py-2 px-2.5 rounded-xl lh-btn-primary text-xs flex items-center justify-center gap-1">
+                                <i data-lucide="heart" class="w-3.5 h-3.5"></i>
+                                <span>Amen (+1)</span>
+                              </button>
+                              <button onclick="window.Lighthouse.pushPrayerCardToWatch('${c.id}')"
+                                class="p-2 rounded-xl text-xs font-semibold ${onWatch ? 'lh-badge-success' : 'lh-surface lh-text-sec hover:lh-text-main'}"
+                                title="${onWatch ? 'Scheduled on 24h Watch' : 'Push this prayer card to 24h Watch'}">
+                                <i data-lucide="calendar-plus" class="w-4 h-4"></i>
+                              </button>
+                              <button onclick="window.Lighthouse.togglePrayerBoardPin('${c.id}')"
+                                class="p-2 rounded-xl lh-surface lh-text-muted hover:lh-text-main" title="Unpin from Active Board">
+                                <i data-lucide="x" class="w-4 h-4"></i>
+                              </button>
+                            </div>
                           </div>
-                          <div class="pt-2 border-t lh-border flex items-center justify-between gap-1.5">
-                            <button onclick="window.Lighthouse.prayForCard('${c.id}')"
-                              class="flex-1 py-2 px-2.5 rounded-xl lh-btn-primary text-xs flex items-center justify-center gap-1">
-                              <i data-lucide="heart" class="w-3.5 h-3.5"></i>
-                              <span>Amen (+1)</span>
-                            </button>
-                            <button onclick="window.Lighthouse.openPrayerCardDetail('${c.id}')"
-                              class="p-2 rounded-xl lh-surface lh-text-sec hover:lh-text-main" title="Details">
-                              <i data-lucide="book-open" class="w-4 h-4"></i>
-                            </button>
-                            <button onclick="window.Lighthouse.togglePrayerBoardPin('${c.id}')"
-                              class="p-2 rounded-xl lh-surface lh-text-muted hover:lh-text-main" title="Unpin from Active Board">
-                              <i data-lucide="x" class="w-4 h-4"></i>
-                            </button>
-                          </div>
-                        </div>
-                      `
-                      )
+                        `;
+                      })
                       .join('')}
                   </div>`
             }
@@ -941,7 +972,6 @@
     // PAGE-SPECIFIC ACTIONS (MORNING, NIGHT, CAPTAIN'S LOG, PRAYER)
     // =========================================================================
     const pageActions = {
-      // Progressive Disclosure Detail Modals
       openMorningDetail(cardId) {
         const c = MORNING_LIBRARY.find((item) => item.id === cardId);
         if (!c) return;
@@ -1034,9 +1064,13 @@
               class="flex-1 py-2.5 px-4 rounded-xl lh-btn-primary text-xs">
               Amen • Log Prayer Today
             </button>
-            <button onclick="window.Lighthouse.markPrayerAnswered('${c.id}'); window.Lighthouse.closeDetailModal();"
+            <button onclick="window.Lighthouse.pushPrayerCardToWatch('${c.id}'); window.Lighthouse.closeDetailModal();"
               class="py-2.5 px-4 rounded-xl lh-btn-soft text-xs">
-              Mark Answered (Ebenezer)
+              + Push to 24h Watch
+            </button>
+            <button onclick="window.Lighthouse.markPrayerAnswered('${c.id}'); window.Lighthouse.closeDetailModal();"
+              class="py-2.5 px-4 rounded-xl lh-elevated lh-text-main text-xs font-semibold">
+              Mark Answered
             </button>
           `
         });
@@ -1072,19 +1106,27 @@
         });
       },
 
-      // Morning & Night Board Handlers
+      // Morning & Night Board Handlers (Two-Way Linked to 24h Watchtower)
       setMorningCategory(cat) {
         state.morningCategoryFilter = cat;
         renderApp();
       },
       toggleMorningBoard(cardId) {
         const exists = (state.morningBoardIds || []).includes(cardId);
-        state.morningBoardIds = exists
-          ? state.morningBoardIds.filter((id) => id !== cardId)
-          : [...(state.morningBoardIds || []), cardId];
+        if (exists) {
+          state.morningBoardIds = state.morningBoardIds.filter((id) => id !== cardId);
+          // Also remove matching block from Watchtower if unlocked
+          if (!state.planLocked) {
+            state.planBlocks = (state.planBlocks || []).filter(
+              (b) => !(b.sourceType === 'morning' && b.sourceId === cardId)
+            );
+          }
+        } else {
+          state.morningBoardIds = [...(state.morningBoardIds || []), cardId];
+        }
         saveState();
         renderApp();
-        showToast(exists ? 'Removed from Morning Board.' : 'Added to My Morning Board!');
+        showToast(exists ? 'Removed from Morning Board & Watchtower.' : 'Added to My Morning Board!');
       },
       load30MinWorkoutPreset() {
         const rampIds = ['mw-1', 'mw-2', 'mw-3', 'mw-4', 'mw-5'];
@@ -1098,34 +1140,61 @@
         const lib = type === 'morning' ? MORNING_LIBRARY : NIGHT_LIBRARY;
         const c = lib.find((i) => i.id === cardId);
         if (!c) return;
+
+        // Ensure card is on its respective board so two-way board sync stays consistent
+        if (type === 'morning' && !(state.morningBoardIds || []).includes(cardId)) {
+          state.morningBoardIds = [...(state.morningBoardIds || []), cardId];
+        } else if (type === 'night' && !(state.nightBoardIds || []).includes(cardId)) {
+          state.nightBoardIds = [...(state.nightBoardIds || []), cardId];
+        }
+
+        if (isCardScheduledToday(type, cardId)) {
+          saveState();
+          renderApp();
+          return showToast(`"${c.title}" is already on today’s 24h Watchtower.`);
+        }
+
         state.planBlocks.push({
           id: `pb-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
           title: c.title,
           startTime: c.defaultTime || '06:00',
           durationMins: c.durationMins || 10,
-          category: type,
+          category: c.category === 'Biblical Rest (Menuha)' ? 'rest' : type,
+          sourceType: type,
+          sourceId: c.id,
           completed: false,
           dayOffset: 0
         });
         saveState();
+        renderApp();
         showToast(`Pushed "${c.title}" to 24h Watchtower!`);
       },
       pushAllMorningBoardToWatch() {
         if (state.planLocked) return showToast('Unlock 24h Watchtower first.');
         const cards = (state.morningBoardIds || []).map((id) => MORNING_LIBRARY.find((c) => c.id === id)).filter(Boolean);
+        let added = 0;
         cards.forEach((c) => {
+          if (isCardScheduledToday('morning', c.id)) return;
           state.planBlocks.push({
             id: `pb-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
             title: c.title,
             startTime: c.defaultTime,
             durationMins: c.durationMins,
-            category: 'morning',
+            category: c.category === 'Biblical Rest (Menuha)' ? 'rest' : 'morning',
+            sourceType: 'morning',
+            sourceId: c.id,
             completed: false,
             dayOffset: 0
           });
+          added++;
         });
         saveState();
-        showToast(`Pushed ${cards.length} Morning Board cards to today’s 24h Watchtower!`);
+        renderApp();
+        showToast(
+          added > 0
+            ? `Pushed ${added} Morning Board card${added === 1 ? '' : 's'} to today’s 24h Watchtower!`
+            : 'All Morning Board cards are already on today’s 24h Watchtower.'
+        );
       },
       setNightStage(st) {
         state.nightStageFilter = st;
@@ -1133,29 +1202,46 @@
       },
       toggleNightBoard(cardId) {
         const exists = (state.nightBoardIds || []).includes(cardId);
-        state.nightBoardIds = exists
-          ? state.nightBoardIds.filter((id) => id !== cardId)
-          : [...(state.nightBoardIds || []), cardId];
+        if (exists) {
+          state.nightBoardIds = state.nightBoardIds.filter((id) => id !== cardId);
+          if (!state.planLocked) {
+            state.planBlocks = (state.planBlocks || []).filter(
+              (b) => !(b.sourceType === 'night' && b.sourceId === cardId)
+            );
+          }
+        } else {
+          state.nightBoardIds = [...(state.nightBoardIds || []), cardId];
+        }
         saveState();
         renderApp();
-        showToast(exists ? 'Removed from Night Board.' : 'Added to Night Watch Board!');
+        showToast(exists ? 'Removed from Night Board & Watchtower.' : 'Added to Night Watch Board!');
       },
       pushAllNightBoardToWatch() {
         if (state.planLocked) return showToast('Unlock 24h Watchtower first.');
         const cards = (state.nightBoardIds || []).map((id) => NIGHT_LIBRARY.find((c) => c.id === id)).filter(Boolean);
+        let added = 0;
         cards.forEach((c) => {
+          if (isCardScheduledToday('night', c.id)) return;
           state.planBlocks.push({
             id: `pb-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
             title: c.title,
             startTime: c.defaultTime,
             durationMins: c.durationMins,
             category: 'night',
+            sourceType: 'night',
+            sourceId: c.id,
             completed: false,
             dayOffset: 0
           });
+          added++;
         });
         saveState();
-        showToast(`Pushed ${cards.length} Night Watch cards to tonight’s 24h Watchtower!`);
+        renderApp();
+        showToast(
+          added > 0
+            ? `Pushed ${added} Night Watch card${added === 1 ? '' : 's'} to tonight’s 24h Watchtower!`
+            : 'All Night Watch Board cards are already on tonight’s 24h Watchtower.'
+        );
       },
 
       // Bespoke Captain's Log Handlers
@@ -1179,6 +1265,9 @@
           startTime: idx === 0 ? '08:30' : '10:00',
           durationMins: 30,
           category: 'morning',
+          sourceType: 'baylor',
+          sourceId: `baylor-${Date.now()}`,
+          dateStr: getLocalIsoDate(1),
           completed: false,
           dayOffset: 1
         });
@@ -1359,9 +1448,19 @@
         showToast('Amen — logged intercession & marked today’s Prayer Watch complete!');
       },
       togglePrayerBoardPin(cardId) {
-        state.prayerCards = state.prayerCards.map((c) =>
-          c.id === cardId ? { ...c, onActiveBoard: !c.onActiveBoard } : c
-        );
+        let nowPinned = false;
+        state.prayerCards = state.prayerCards.map((c) => {
+          if (c.id === cardId) {
+            nowPinned = !c.onActiveBoard;
+            return { ...c, onActiveBoard: nowPinned };
+          }
+          return c;
+        });
+        if (!nowPinned && !state.planLocked) {
+          state.planBlocks = (state.planBlocks || []).filter(
+            (b) => !(b.sourceType === 'prayer' && b.sourceId === cardId)
+          );
+        }
         saveState();
         renderApp();
       },
@@ -1369,6 +1468,11 @@
         state.prayerCards = state.prayerCards.map((c) =>
           c.id === cardId ? { ...c, isAnswered: true, onActiveBoard: false } : c
         );
+        if (!state.planLocked) {
+          state.planBlocks = (state.planBlocks || []).filter(
+            (b) => !(b.sourceType === 'prayer' && b.sourceId === cardId)
+          );
+        }
         saveState();
         renderApp();
         showToast('Moved to Answered Ebenezer Vault!');
@@ -1391,17 +1495,46 @@
         renderApp();
         showToast(`Pinned "${t.theme}" to your Active Prayer Board!`);
       },
+      pushPrayerCardToWatch(cardId) {
+        if (state.planLocked) return showToast('Unlock 24h Watchtower first.');
+        const c = (state.prayerCards || []).find((i) => i.id === cardId);
+        if (!c) return;
+        if (isCardScheduledToday('prayer', cardId)) {
+          return showToast(`"${c.title}" is already on today’s 24h Watchtower.`);
+        }
+        state.planBlocks.push({
+          id: `pb-${Date.now()}`,
+          title: `[Prayer] ${c.title}`,
+          startTime: '07:05',
+          durationMins: 10,
+          category: 'prayer',
+          sourceType: 'prayer',
+          sourceId: c.id,
+          completed: false,
+          dayOffset: 0
+        });
+        saveState();
+        renderApp();
+        showToast(`Scheduled "${c.title}" on 24h Watchtower!`);
+      },
       pushPrayerBlockToWatch() {
+        if (state.planLocked) return showToast('Unlock 24h Watchtower first.');
+        if (isCardScheduledToday('prayer_general', 'sanctuary_watch')) {
+          return showToast('Sanctuary Active Prayer Watch is already scheduled today.');
+        }
         state.planBlocks.push({
           id: `pb-${Date.now()}`,
           title: 'Sanctuary Active Prayer Watch',
           startTime: '07:05',
           durationMins: 15,
           category: 'prayer',
+          sourceType: 'prayer_general',
+          sourceId: 'sanctuary_watch',
           completed: false,
           dayOffset: 0
         });
         saveState();
+        renderApp();
         showToast('Scheduled Prayer Watch on 24h Watchtower!');
       },
       stepGuidedPrayer(delta) {
