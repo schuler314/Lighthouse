@@ -1,5 +1,5 @@
 // =========================================================================
-// LIGHTHOUSE — SHARED ENGINE, ROUTER, APP SHELL, GCAL SYNC & PDF STUDIO
+// LIGHTHOUSE — SHARED ENGINE, ROUTER, APP SHELL, AUTO-SYNC GCAL & PDF STUDIO
 // =========================================================================
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 import {
@@ -8,6 +8,7 @@ import {
   LEGACY_MOCK_GCAL_IDS,
   NAV_STATIONS,
   INITIAL_STATE,
+  MORNING_LIBRARY,
   NIGHT_LIBRARY,
   JESUS_PRAYER_THEMES,
   TODAY_ISO,
@@ -16,8 +17,10 @@ import {
 } from './data.js';
 
 // =========================================================================
-// SUPABASE CLIENT & SHARED STATE
+// SUPABASE CLIENT, GCAL SESSION STORAGE & SHARED STATE
 // =========================================================================
+const GCAL_SESSION_KEY = 'lighthouse_gcal_session_v1';
+
 const supabaseClient =
   SUPABASE_CONFIG.url && SUPABASE_CONFIG.anonKey
     ? createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.anonKey, { db: { schema: SUPABASE_CONFIG.schema } })
@@ -31,22 +34,126 @@ export const state = loadLocalState();
 let currentPage = 'index.html';
 let currentDefaultTab = 'calendar';
 let pageRenderers = {};
-let gcalAccessToken = null; // Volatile RAM-only token
 let supabaseSyncTimeout = null;
+let autoSyncTimerId = null;
+let gcalSyncInFlight = false;
 let shellMounted = false;
 let lastRenderedIsoDate = getLocalIsoDate(0);
 
+// =========================================================================
+// CLIENT-SIDE GCAL SESSION HELPERS (PERSISTS ACROSS ALL 3 HTML PAGES)
+// =========================================================================
+function readGcalSession() {
+  try {
+    const raw = sessionStorage.getItem(GCAL_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.token || !parsed?.expiresAt) return null;
+    if (Date.now() >= parsed.expiresAt) {
+      sessionStorage.removeItem(GCAL_SESSION_KEY);
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeGcalSession(token, expiresInSec = 3500, lastFetchedAt = Date.now()) {
+  try {
+    // 60-second buffer before Google's hard 1-hour expiry
+    const expiresAt = Date.now() + Math.max(60, Number(expiresInSec) - 60) * 1000;
+    sessionStorage.setItem(
+      GCAL_SESSION_KEY,
+      JSON.stringify({ token, expiresAt, lastFetchedAt })
+    );
+  } catch {
+    // Ignore sessionStorage restrictions
+  }
+}
+
+function touchGcalSessionFetchTime() {
+  const cur = readGcalSession();
+  if (!cur) return;
+  try {
+    sessionStorage.setItem(
+      GCAL_SESSION_KEY,
+      JSON.stringify({ ...cur, lastFetchedAt: Date.now() })
+    );
+  } catch {
+    // Ignore
+  }
+}
+
+function clearGcalSession() {
+  try {
+    sessionStorage.removeItem(GCAL_SESSION_KEY);
+  } catch {
+    // Ignore
+  }
+}
+
+export function getGcalSessionStatus() {
+  const sess = readGcalSession();
+  const autoEnabled = state.settings.gcalAutoSyncEnabled !== false;
+  const intervalMins = Number(state.settings.gcalAutoSyncMins) || 15;
+  const expiresInMins = sess ? Math.max(1, Math.ceil((sess.expiresAt - Date.now()) / 60000)) : 0;
+  return {
+    hasToken: Boolean(sess),
+    expiresInMins,
+    lastFetchedAt: sess?.lastFetchedAt || 0,
+    syncing: gcalSyncInFlight,
+    autoEnabled,
+    intervalMins,
+    lastSyncLabel: state.settings.lastGcalSync || 'Not synced yet'
+  };
+}
+
+// =========================================================================
+// STATE MIGRATION & NORMALIZATION
+// =========================================================================
 function sanitizeGcalEvents(rawEvents) {
   if (!Array.isArray(rawEvents)) return { events: [], changed: false };
   const cleaned = rawEvents.filter((ev) => {
     if (!ev || !ev.id) return false;
-    // Purge legacy hardcoded snapshot filler events (e.g., "No School")
     if (LEGACY_MOCK_SET.has(ev.id)) return false;
-    // Purge undated events from older snapshots that relied on frozen dayOffset
     if (!ev.dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(ev.dateStr)) return false;
     return true;
   });
   return { events: cleaned, changed: cleaned.length !== rawEvents.length };
+}
+
+function normalizeProListItem(item) {
+  return {
+    id: item.id || `li-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+    text: item.text || '',
+    assignedTo: item.assignedTo || 'Dan',
+    completed: Boolean(item.completed),
+    priority: ['p1', 'p2', 'p3', 'p4'].includes(item.priority) ? item.priority : 'p3',
+    dueDate: item.dueDate || '',
+    scheduledDate: item.scheduledDate || '',
+    scheduledTime: item.scheduledTime || '15:00',
+    durationMins: Number(item.durationMins) || 30,
+    recurrence: item.recurrence || 'none',
+    tags: Array.isArray(item.tags) ? item.tags : [],
+    notes: item.notes || '',
+    subtasks: Array.isArray(item.subtasks) ? item.subtasks : [],
+    watchBlockId: item.watchBlockId || null
+  };
+}
+
+function normalizePlanBlock(block) {
+  if (block.sourceType && block.sourceId) return block;
+  // Backfill sourceType/sourceId for older saved Morning/Night routine blocks so two-way deletion works
+  const mMatch = MORNING_LIBRARY.find((c) => c.title === block.title);
+  if (mMatch) {
+    return { ...block, sourceType: 'morning', sourceId: mMatch.id };
+  }
+  const nMatch = NIGHT_LIBRARY.find((c) => c.title === block.title);
+  if (nMatch) {
+    return { ...block, sourceType: 'night', sourceId: nMatch.id };
+  }
+  return block;
 }
 
 function buildMergedState(parsed) {
@@ -62,6 +169,12 @@ function buildMergedState(parsed) {
     mergedSettings.hideShortSoloEvents = false;
     mergedSettings.soloEventsRuleMigrated = true;
   }
+  if (mergedSettings.gcalAutoSyncEnabled === undefined) {
+    mergedSettings.gcalAutoSyncEnabled = true;
+  }
+  if (!mergedSettings.gcalAutoSyncMins) {
+    mergedSettings.gcalAutoSyncMins = 15;
+  }
 
   const { events: cleanGcalEvents, changed: gcalPurged } = sanitizeGcalEvents(parsed.gcalEvents);
   if (gcalPurged) {
@@ -73,10 +186,23 @@ function buildMergedState(parsed) {
     stateMigratedOnLoad = true;
   }
 
+  const normalizedLists = Array.isArray(parsed.lists)
+    ? parsed.lists.map((board) => ({
+        ...board,
+        items: Array.isArray(board.items) ? board.items.map(normalizeProListItem) : []
+      }))
+    : structuredClone(INITIAL_STATE.lists);
+
+  const normalizedBlocks = Array.isArray(parsed.planBlocks)
+    ? parsed.planBlocks.map(normalizePlanBlock)
+    : structuredClone(INITIAL_STATE.planBlocks);
+
   return {
     ...structuredClone(INITIAL_STATE),
     ...parsed,
     gcalEvents: cleanGcalEvents,
+    lists: normalizedLists,
+    planBlocks: normalizedBlocks,
     workouts: Array.isArray(parsed.workouts) ? parsed.workouts : structuredClone(INITIAL_STATE.workouts),
     dailyHistory:
       parsed.dailyHistory && typeof parsed.dailyHistory === 'object'
@@ -203,7 +329,6 @@ export function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
-// Always compute a calendar event's offset dynamically against today's real date
 export function getEventDayOffset(ev) {
   if (!ev || !ev.dateStr) return null;
   return getDayOffsetFromIsoDate(ev.dateStr);
@@ -292,7 +417,7 @@ function mountAppShell() {
             </div>
             <div>
               <h3 class="font-bold text-base lh-text-main">Google Calendar Sync</h3>
-              <p class="text-xs lh-text-sec">Live OAuth 2.0 (Primary, Family &amp; Regla’s Calendars)</p>
+              <p class="text-xs lh-text-sec">Live OAuth 2.0 + Session Auto-Sync (Primary, Family &amp; Regla)</p>
             </div>
           </div>
           <button onclick="window.Lighthouse.closeGcalModal()" class="p-2 rounded-xl lh-elevated lh-text-sec">
@@ -306,8 +431,32 @@ function mountAppShell() {
             <span id="gcal-token-badge" class="text-[11px] px-2 py-0.5 rounded-full lh-badge-sec font-medium">Client ID Pre-Loaded</span>
           </div>
           <p class="text-xs lh-text-sec leading-relaxed">
-            Pulls real dated events (next 14 days) from your Primary (<code>schuler314</code>), Family, and Regla's shared calendars (<code>regla317</code> &amp; <code>reglaschuler</code>) and applies your keyword Fog Filter rules.
+            Pulls real dated events (next 14 days) from your Primary (<code>schuler314</code>), Family, and Regla's shared calendars (<code>regla317</code> &amp; <code>reglaschuler</code>). Session stays active across all Lighthouse pages for 1 hour and auto-refreshes in the background.
           </p>
+
+          <!-- AUTO-SYNC INTERVAL CONTROLS -->
+          <div class="p-3 rounded-xl lh-surface space-y-2.5">
+            <label class="flex items-center justify-between cursor-pointer">
+              <div>
+                <span class="text-xs font-semibold lh-text-main block">Auto-Refresh While Session Active</span>
+                <span class="text-[11px] lh-text-sec">Syncs automatically on timer &amp; when returning to the tab</span>
+              </div>
+              <input id="toggle-gcal-autosync" type="checkbox"
+                onchange="window.Lighthouse.updateGcalAutoSync(this.checked, null)"
+                class="w-4 h-4" />
+            </label>
+            <div class="flex items-center justify-between gap-2 pt-1 border-t lh-border">
+              <span class="text-xs lh-text-sec">Auto-Sync Frequency:</span>
+              <select id="select-gcal-interval"
+                onchange="window.Lighthouse.updateGcalAutoSync(null, Number(this.value))"
+                class="px-2.5 py-1.5 rounded-lg lh-input text-xs font-semibold">
+                <option value="15">Every 15 minutes (Recommended)</option>
+                <option value="30">Every 30 minutes</option>
+                <option value="60">Every 60 minutes</option>
+              </select>
+            </div>
+          </div>
+
           <div class="space-y-1">
             <label class="text-[11px] font-semibold lh-text-sec block">Google Web OAuth Client ID:</label>
             <input id="input-gcal-client-id" type="text" placeholder="Paste Google Web OAuth Client ID..."
@@ -428,7 +577,7 @@ function mountAppShell() {
               <p class="text-xs lh-text-sec">Psalm 119:105</p>
             </div>
           </a>
-          <button onclick="window.Lighthouse.openGcalModal()" class="p-2 rounded-xl lh-elevated lh-text-sec hover:lh-text-main" title="Sync Google Calendar">
+          <button onclick="window.Lighthouse.openGcalModal()" class="p-2 rounded-xl lh-elevated lh-text-sec hover:lh-text-main" title="Google Calendar Sync Settings">
             <i data-lucide="calendar" class="w-4 h-4"></i>
           </button>
         </div>
@@ -466,9 +615,9 @@ function mountAppShell() {
               <button id="btn-switch-night" onclick="window.Lighthouse.setTab('night')" class="px-2.5 py-1 rounded-lg text-xs font-semibold transition">Night</button>
             </div>
 
-            <button onclick="window.Lighthouse.openGcalModal()" class="px-2.5 py-1.5 rounded-xl lh-elevated lh-text-sec hover:lh-text-main text-xs font-medium flex items-center gap-1.5" title="Google Calendar Sync">
+            <button id="header-gcal-btn" onclick="window.Lighthouse.syncGcalQuick()" class="px-2.5 py-1.5 rounded-xl lh-elevated lh-text-sec hover:lh-text-main text-xs font-medium flex items-center gap-1.5" title="Sync Google Calendar Now">
               <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
-              <span class="hidden sm:inline">GCal</span>
+              <span class="hidden sm:inline">Sync GCal</span>
             </button>
 
             <button onclick="window.Lighthouse.openPdfBuilder()" class="px-2.5 py-1.5 rounded-xl lh-btn-soft text-xs font-semibold flex items-center gap-1.5" title="Build Analog Night & Binder PDF">
@@ -516,6 +665,25 @@ export function renderNavigation() {
   const goalPill = document.getElementById('header-goal-pill');
   if (goalPill) {
     goalPill.innerHTML = `<i data-lucide="target" class="w-3 h-3"></i><span>${escapeHtml(activeGoals[0]?.title || 'Goals')} (${activeGoals.length}/${state.settings.maxActiveGoals})</span>`;
+  }
+
+  // Update header GCal sync button visual status
+  const gcalStatus = getGcalSessionStatus();
+  const headerGcalBtn = document.getElementById('header-gcal-btn');
+  if (headerGcalBtn) {
+    headerGcalBtn.className = `px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 transition ${
+      gcalStatus.hasToken ? 'lh-badge-success' : 'lh-elevated lh-text-sec hover:lh-text-main'
+    }`;
+    headerGcalBtn.innerHTML = `
+      <i data-lucide="refresh-cw" class="w-3.5 h-3.5 ${gcalStatus.syncing ? 'animate-spin' : ''}"></i>
+      <span class="hidden sm:inline">${
+        gcalStatus.syncing
+          ? 'Syncing...'
+          : gcalStatus.hasToken
+          ? `GCal (${gcalStatus.expiresInMins}m)`
+          : 'Sync GCal'
+      }</span>
+    `;
   }
 
   // Morning/Night Quick Switcher when on Routines
@@ -706,7 +874,6 @@ export function buildPrintableBinderSheetHtml() {
     </div>
   `;
 
-  // 1. Night Watch Wind-Down Plan Items
   const selectedNightCards = (cfg.selectedNightCardIds || [])
     .map((id) => NIGHT_LIBRARY.find((c) => c.id === id))
     .filter(Boolean);
@@ -737,7 +904,6 @@ export function buildPrintableBinderSheetHtml() {
       `
       : '';
 
-  // 2. Prayer Sanctuary & Intercession Section
   const activeIntercessions = (state.prayerCards || []).filter((c) => !c.isAnswered && c.onActiveBoard);
   const selectedJesusThemes = (cfg.selectedJesusThemeIds || [])
     .map((id) => JESUS_PRAYER_THEMES.find((t) => t.id === id))
@@ -853,7 +1019,6 @@ export function buildPrintableBinderSheetHtml() {
       `
       : '';
 
-  // 3. Captain's Log Journaling Prompts
   const journalModes = cfg.includeCaptainsLog ? cfg.selectedJournalModes || ['closure_321'] : [];
   const journalBlocksHtml = journalModes
     .map((mId) => {
@@ -1403,12 +1568,11 @@ function renderPdfBuilderModalContent() {
 }
 
 // =========================================================================
-// ICS DATE PARSER HELPER (SUPPORTS ALL-DAY, LOCAL & UTC TIMESTAMPS)
+// ICS DATE PARSER & AUTO-SYNC SCHEDULER
 // =========================================================================
 function parseIcsDateValue(rawVal) {
   if (!rawVal) return null;
   const cleaned = rawVal.trim();
-  // All-day format: YYYYMMDD
   if (/^\d{8}$/.test(cleaned)) {
     const y = Number(cleaned.slice(0, 4));
     const m = Number(cleaned.slice(4, 6));
@@ -1419,7 +1583,6 @@ function parseIcsDateValue(rawVal) {
       isAllDay: true
     };
   }
-  // Date-time format: YYYYMMDDTHHMMSS(Z)
   const dtMatch = cleaned.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z?)$/);
   if (dtMatch) {
     const [, yy, mm, dd, hh, mi, ss, isUtc] = dtMatch;
@@ -1427,17 +1590,39 @@ function parseIcsDateValue(rawVal) {
       ? new Date(Date.UTC(Number(yy), Number(mm) - 1, Number(dd), Number(hh), Number(mi), Number(ss)))
       : new Date(Number(yy), Number(mm) - 1, Number(dd), Number(hh), Number(mi), Number(ss));
     const dateStr = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
-    return {
-      date: dt,
-      dateStr,
-      isAllDay: false
-    };
+    return { date: dt, dateStr, isAllDay: false };
   }
   return null;
 }
 
 function formatDateObjIso(dt) {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+
+function maybeRunBackgroundGcalSync(minAgeMs = null) {
+  if (state.settings.gcalAutoSyncEnabled === false) return;
+  if (gcalSyncInFlight) return;
+  const sess = readGcalSession();
+  if (!sess?.token) return;
+
+  const intervalMs = (Number(state.settings.gcalAutoSyncMins) || 15) * 60 * 1000;
+  const threshold = minAgeMs !== null ? minAgeMs : intervalMs;
+  if (Date.now() - (sess.lastFetchedAt || 0) >= threshold) {
+    sharedActions.fetchLiveGoogleEvents(sess.token, { silent: true });
+  }
+}
+
+function startGcalAutoSyncLoop() {
+  if (autoSyncTimerId) clearInterval(autoSyncTimerId);
+  // Check every 60 seconds whether the active session is due for a background refresh
+  autoSyncTimerId = setInterval(() => {
+    maybeRunBackgroundGcalSync();
+    // Refresh countdown badge in header/Watchtower without full page flicker if session expired
+    const sess = readGcalSession();
+    if (!sess && document.getElementById('header-gcal-btn')?.className.includes('lh-badge-success')) {
+      renderApp();
+    }
+  }, 60000);
 }
 
 // =========================================================================
@@ -1662,19 +1847,63 @@ const sharedActions = {
     window.print();
   },
 
-  // Google Calendar OAuth & .ICS Sync
+  // =========================================================================
+  // GOOGLE CALENDAR SYNC (APPROACH 1: CLIENT-SIDE SESSION + AUTO-SYNC)
+  // =========================================================================
+  updateGcalAutoSync(enabled, mins) {
+    if (enabled !== null && enabled !== undefined) {
+      state.settings.gcalAutoSyncEnabled = Boolean(enabled);
+    }
+    if (mins !== null && mins !== undefined && !Number.isNaN(Number(mins))) {
+      state.settings.gcalAutoSyncMins = Number(mins);
+    }
+    saveState();
+    renderApp();
+    showToast(
+      state.settings.gcalAutoSyncEnabled
+        ? `Auto-sync active: every ${state.settings.gcalAutoSyncMins} mins while signed in.`
+        : 'Google Calendar auto-sync paused.'
+    );
+  },
+
+  // One-tap sync button (used directly on Watchtower screen and top header)
+  async syncGcalQuick() {
+    if (gcalSyncInFlight) return;
+    const sess = readGcalSession();
+    if (sess?.token) {
+      await this.fetchLiveGoogleEvents(sess.token, { silent: false });
+      return;
+    }
+    // No active session token yet — launch OAuth popup directly without opening the settings modal first
+    await this.connectGoogleOAuth();
+  },
+
   openGcalModal() {
     const modal = document.getElementById('gcal-modal');
     if (!modal) return;
     const input = document.getElementById('input-gcal-client-id');
     const toggle = document.getElementById('toggle-gcal-readonly');
+    const autoToggle = document.getElementById('toggle-gcal-autosync');
+    const intervalSel = document.getElementById('select-gcal-interval');
     const originEl = document.getElementById('gcal-current-origin');
+    const badge = document.getElementById('gcal-token-badge');
+
     if (!state.settings.gcalClientId) {
       state.settings.gcalClientId = INITIAL_STATE.settings.gcalClientId;
     }
     if (input) input.value = state.settings.gcalClientId;
     if (toggle) toggle.checked = state.settings.gcalReadOnlyScope !== false;
+    if (autoToggle) autoToggle.checked = state.settings.gcalAutoSyncEnabled !== false;
+    if (intervalSel) intervalSel.value = String(state.settings.gcalAutoSyncMins || 15);
     if (originEl) originEl.textContent = window.location.origin;
+
+    const status = getGcalSessionStatus();
+    if (badge) {
+      badge.textContent = status.hasToken
+        ? `Session Active (${status.expiresInMins}m left)`
+        : 'Client ID Pre-Loaded';
+    }
+
     this.renderGcalDiagnostics();
     modal.classList.remove('hidden');
     modal.classList.add('flex');
@@ -1689,13 +1918,14 @@ const sharedActions = {
   },
 
   clearGcalEvents() {
+    clearGcalSession();
     state.gcalEvents = [];
     state.settings.lastGcalSync = 'Cleared (Not synced)';
     state.settings.lastCalendarSummary = [];
     saveState();
     renderApp();
     this.renderGcalDiagnostics(
-      '<span class="lh-text-sec font-medium">Cleared all cached calendar events. Click "Sign In &amp; Sync" to pull fresh events from Google Calendar.</span>'
+      '<span class="lh-text-sec font-medium">Cleared all cached calendar events &amp; session token. Click "Sign In &amp; Sync" to pull fresh events.</span>'
     );
     showToast('Cleared cached calendar events!');
   },
@@ -1780,10 +2010,10 @@ const sharedActions = {
             return showToast(`Google OAuth error: ${resp.error}`);
           }
           if (resp?.access_token) {
-            gcalAccessToken = resp.access_token;
+            writeGcalSession(resp.access_token, resp.expires_in || 3500, 0);
             const badge = document.getElementById('gcal-token-badge');
-            if (badge) badge.textContent = 'Connected (Live)';
-            await this.fetchLiveGoogleEvents(gcalAccessToken);
+            if (badge) badge.textContent = 'Connected (Auto-Sync Active)';
+            await this.fetchLiveGoogleEvents(resp.access_token, { silent: false });
           }
         }
       });
@@ -1796,22 +2026,42 @@ const sharedActions = {
     }
   },
 
-  async fetchLiveGoogleEvents(token) {
+  async fetchLiveGoogleEvents(token, { silent = false } = {}) {
+    if (gcalSyncInFlight) return;
+    gcalSyncInFlight = true;
+    renderNavigation();
+
     try {
-      this.renderGcalDiagnostics('<span class="text-amber-400 font-semibold">Fetching Primary, Family &amp; Regla’s shared calendars...</span>');
+      if (!silent) {
+        this.renderGcalDiagnostics('<span class="text-amber-400 font-semibold">Fetching Primary, Family &amp; Regla’s shared calendars...</span>');
+      }
       const listRes = await fetch(
         'https://www.googleapis.com/calendar/v3/users/me/calendarList?showHidden=true&minAccessRole=freeBusyReader',
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const listData = await listRes.json();
 
+      if (listRes.status === 401) {
+        clearGcalSession();
+        if (!silent) {
+          this.renderGcalDiagnostics(
+            '<span class="text-amber-400 font-semibold">Google session expired. Click Sync again to sign back in.</span>'
+          );
+          showToast('Google Calendar session expired — tap Sync GCal to reconnect.');
+        }
+        return;
+      }
+
       if (!listRes.ok) {
         const apiMsg = listData?.error?.message || `HTTP ${listRes.status}`;
-        this.renderGcalDiagnostics(
-          `<span class="text-rose-400 font-bold">Google Calendar API Error: ${escapeHtml(apiMsg)}</span>
-           <p class="text-[11px] lh-text-sec mt-1">Ensure the <strong>Google Calendar API</strong> is enabled in your Google Cloud project (APIs &amp; Services → Library → Google Calendar API → Enable).</p>`
-        );
-        return showToast(`Calendar API Error: ${apiMsg}`);
+        if (!silent) {
+          this.renderGcalDiagnostics(
+            `<span class="text-rose-400 font-bold">Google Calendar API Error: ${escapeHtml(apiMsg)}</span>
+             <p class="text-[11px] lh-text-sec mt-1">Ensure the <strong>Google Calendar API</strong> is enabled in your Google Cloud project (APIs &amp; Services → Library → Google Calendar API → Enable).</p>`
+          );
+          showToast(`Calendar API Error: ${apiMsg}`);
+        }
+        return;
       }
 
       const discovered = Array.isArray(listData.items) ? listData.items : [];
@@ -1884,7 +2134,6 @@ const sharedActions = {
         for (const item of evData.items || []) {
           if (item.status === 'cancelled') continue;
 
-          // Case A: All-day event (Google uses exclusive end.date)
           if (item.start?.date && !item.start?.dateTime) {
             const startDay = parseLocalDateOnly(item.start.date);
             const endExclusive = item.end?.date
@@ -1914,7 +2163,6 @@ const sharedActions = {
             continue;
           }
 
-          // Case B: Timed event
           if (item.start?.dateTime) {
             const startD = new Date(item.start.dateTime);
             const endD = item.end?.dateTime ? new Date(item.end.dateTime) : startD;
@@ -1946,17 +2194,25 @@ const sharedActions = {
       state.gcalEvents = events;
       state.settings.lastGcalSync = `Live Sync • ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
       state.settings.lastCalendarSummary = calendarSummary;
+      touchGcalSessionFetchTime();
       saveState();
-      renderApp();
-      this.renderGcalDiagnostics(
-        `<span style="color: var(--success-accent);" class="font-bold">✓ Synced ${events.length} upcoming events across ${calendarSummary.length} calendars!</span>`
-      );
-      showToast(`Synced ${events.length} live events across your & Regla’s calendars!`);
+
+      if (!silent) {
+        this.renderGcalDiagnostics(
+          `<span style="color: var(--success-accent);" class="font-bold">✓ Synced ${events.length} upcoming events across ${calendarSummary.length} calendars!</span>`
+        );
+        showToast(`Synced ${events.length} live events across your & Regla’s calendars!`);
+      }
     } catch (err) {
-      this.renderGcalDiagnostics(
-        `<span class="text-rose-400 font-bold">Sync Exception: ${escapeHtml(err?.message || 'Unknown error')}</span>`
-      );
-      showToast('Error fetching live Google Calendar events.');
+      if (!silent) {
+        this.renderGcalDiagnostics(
+          `<span class="text-rose-400 font-bold">Sync Exception: ${escapeHtml(err?.message || 'Unknown error')}</span>`
+        );
+        showToast('Error fetching live Google Calendar events.');
+      }
+    } finally {
+      gcalSyncInFlight = false;
+      renderApp();
     }
   },
 
@@ -2038,13 +2294,15 @@ export function initLighthousePage({ page, defaultTab, renderers, actions = {} }
 
   const boot = () => {
     mountAppShell();
-    // If legacy mock calendar events were purged on load, persist the clean state immediately
     if (stateMigratedOnLoad) {
       saveState();
       stateMigratedOnLoad = false;
     }
     renderApp();
     hydrateFromSupabaseOnLoad();
+    startGcalAutoSyncLoop();
+    // If an active Google session exists and is due for refresh, sync silently in the background
+    maybeRunBackgroundGcalSync();
   };
 
   if (document.readyState === 'loading') {
@@ -2060,10 +2318,13 @@ export function initLighthousePage({ page, defaultTab, renderers, actions = {} }
     renderApp();
   });
 
-  // Automatically refresh if the user returns to the app after midnight
+  // Auto-refresh date after midnight and auto-sync GCal when returning to the tab (if >= 5 mins stale)
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && getLocalIsoDate(0) !== lastRenderedIsoDate) {
-      renderApp();
+    if (document.visibilityState === 'visible') {
+      if (getLocalIsoDate(0) !== lastRenderedIsoDate) {
+        renderApp();
+      }
+      maybeRunBackgroundGcalSync(5 * 60 * 1000);
     }
   });
 
