@@ -1,0 +1,1431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Lighthouse — Morning Watch, Night Watch &amp; Prayer Sanctuary</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- HTML2PDF Bundle CDN (for shared Night Binder PDF Studio) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Shared Lighthouse Styles -->
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body class="min-h-screen flex flex-col md:flex-row">
+  <script type="module">
+    import {
+      MORNING_LIBRARY,
+      NIGHT_LIBRARY,
+      JESUS_PRAYER_THEMES,
+      PRAYER_CATEGORY_OPTIONS,
+      getLocalIsoDate
+    } from './data.js';
+    import {
+      state,
+      saveState,
+      renderApp,
+      showToast,
+      escapeHtml,
+      ensureDailyLog,
+      openDetailModal,
+      initLighthousePage
+    } from './core.js';
+
+    // =========================================================================
+    // STATION 4: MORNING WATCH & REST (ACTIVE BOARD + 22 CATEGORIZED CARDS)
+    // =========================================================================
+    function renderMorningView() {
+      const categories = [
+        'All',
+        'Wake-to-Workout (30m Ramp)',
+        'Circadian & Neural',
+        'Tendon & Mobility',
+        'Spiritual Firstfruits',
+        'Biblical Rest (Menuha)'
+      ];
+
+      const activeBoardCards = (state.morningBoardIds || [])
+        .map((id) => MORNING_LIBRARY.find((c) => c.id === id))
+        .filter(Boolean);
+
+      const totalBoardMins = activeBoardCards.reduce((sum, c) => sum + (c.durationMins || 0), 0);
+
+      const filteredLibrary =
+        state.morningCategoryFilter === 'All'
+          ? MORNING_LIBRARY
+          : MORNING_LIBRARY.filter((c) => c.category === state.morningCategoryFilter);
+
+      return `
+        <div class="space-y-6">
+          <!-- DEDICATED MY MORNING WATCH & REST BOARD -->
+          <div class="lh-surface rounded-2xl p-4 sm:p-6 space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b lh-border">
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="text-[11px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full lh-badge">Active Morning Board</span>
+                  <span class="text-xs font-mono-code lh-text-sec">${activeBoardCards.length} cards • ${totalBoardMins} mins total</span>
+                </div>
+                <h3 class="text-lg sm:text-xl font-bold lh-text-main mt-1">My Morning Watch &amp; 30-Min Workout Ramp</h3>
+                <p class="text-xs lh-text-sec">Tap any card to inspect the neuroscience &amp; Scripture modal, or push your entire board to today’s 24h Watchtower.</p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <button onclick="window.Lighthouse.load30MinWorkoutPreset()"
+                  class="px-3 py-2 rounded-xl lh-btn-soft text-xs flex items-center gap-1.5">
+                  <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+                  <span>Load 30m Wake-to-Workout Ramp</span>
+                </button>
+                <button onclick="window.Lighthouse.pushAllMorningBoardToWatch()"
+                  class="px-3.5 py-2 rounded-xl lh-btn-primary text-xs flex items-center gap-1.5">
+                  <i data-lucide="calendar-plus" class="w-3.5 h-3.5"></i>
+                  <span>Push Board to 24h Watch</span>
+                </button>
+              </div>
+            </div>
+
+            ${
+              activeBoardCards.length === 0
+                ? `<p class="text-xs lh-text-sec py-4 text-center">Your Morning Board is empty. Tap "+ Board" on any card below to build your sequence.</p>`
+                : `<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    ${activeBoardCards
+                      .map(
+                        (c) => `
+                        <div class="p-3.5 rounded-xl lh-elevated flex flex-col justify-between gap-3">
+                          <div onclick="window.Lighthouse.openMorningDetail('${c.id}')" class="cursor-pointer space-y-1.5">
+                            <div class="flex items-center justify-between gap-2">
+                              <span class="text-[10px] font-semibold uppercase tracking-wider" style="color: var(--accent-primary);">${escapeHtml(c.category)}</span>
+                              <span class="text-xs font-mono-code lh-text-sec">${escapeHtml(c.defaultTime)} • ${c.durationMins}m</span>
+                            </div>
+                            <h4 class="font-bold text-sm lh-text-main leading-snug">${escapeHtml(c.title)}</h4>
+                            <p class="text-xs lh-text-sec line-clamp-2">${escapeHtml(c.summary)}</p>
+                          </div>
+                          <div class="flex items-center justify-between pt-2 border-t lh-border">
+                            <button onclick="window.Lighthouse.openMorningDetail('${c.id}')" class="text-[11px] font-semibold lh-text-sec hover:lh-text-main flex items-center gap-1">
+                              <i data-lucide="book-open" class="w-3 h-3"></i> Science &amp; Scripture
+                            </button>
+                            <div class="flex items-center gap-1">
+                              <button onclick="window.Lighthouse.pushCardToWatch('${c.id}', 'morning')" class="px-2 py-1 rounded-lg lh-btn-soft text-[11px]">+ 24h</button>
+                              <button onclick="window.Lighthouse.toggleMorningBoard('${c.id}')" class="p-1 rounded-lg lh-text-muted hover:lh-text-main" title="Remove from Board">
+                                <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      `
+                      )
+                      .join('')}
+                  </div>`
+            }
+          </div>
+
+          <!-- CATEGORY FILTER PILLS -->
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <h4 class="text-sm font-bold lh-text-main">Morning &amp; Menuha Rest Library (${filteredLibrary.length} Cards)</h4>
+              <span class="text-xs lh-text-sec">Tap any card for deep-dive modal</span>
+            </div>
+            <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+              ${categories
+                .map(
+                  (cat) => `
+                  <button onclick="window.Lighthouse.setMorningCategory('${cat}')"
+                    class="px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition ${
+                      state.morningCategoryFilter === cat ? 'lh-btn-primary' : 'lh-surface lh-text-sec'
+                    }">
+                    ${escapeHtml(cat)}
+                  </button>
+                `
+                )
+                .join('')}
+            </div>
+
+            <!-- CLEAN PROGRESSIVE-DISCLOSURE CARD GRID -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              ${filteredLibrary
+                .map((c) => {
+                  const onBoard = (state.morningBoardIds || []).includes(c.id);
+                  return `
+                    <div class="lh-surface rounded-2xl p-4 flex flex-col justify-between gap-3 transition hover:border-opacity-80">
+                      <div onclick="window.Lighthouse.openMorningDetail('${c.id}')" class="cursor-pointer space-y-2">
+                        <div class="flex items-center justify-between gap-2">
+                          <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full lh-badge truncate">${escapeHtml(c.category)}</span>
+                          <span class="text-xs font-mono-code lh-text-sec shrink-0">${c.durationMins}m</span>
+                        </div>
+                        <h4 class="font-bold text-sm sm:text-base lh-text-main leading-snug">${escapeHtml(c.title)}</h4>
+                        <p class="text-xs lh-text-sec leading-relaxed">${escapeHtml(c.summary)}</p>
+                      </div>
+
+                      <div class="pt-2.5 border-t lh-border flex items-center justify-between gap-2">
+                        <button onclick="window.Lighthouse.openMorningDetail('${c.id}')"
+                          class="text-xs font-semibold lh-text-sec hover:lh-text-main flex items-center gap-1">
+                          <i data-lucide="info" class="w-3.5 h-3.5" style="color: var(--accent-primary);"></i>
+                          <span>Details</span>
+                        </button>
+                        <div class="flex items-center gap-1.5">
+                          <button onclick="window.Lighthouse.toggleMorningBoard('${c.id}')"
+                            class="px-2.5 py-1 rounded-lg text-xs font-semibold ${onBoard ? 'lh-badge-success' : 'lh-elevated lh-text-main'}">
+                            ${onBoard ? '✓ On Board' : '+ Board'}
+                          </button>
+                          <button onclick="window.Lighthouse.pushCardToWatch('${c.id}', 'morning')"
+                            class="px-2.5 py-1 rounded-lg lh-btn-primary text-xs">
+                            + 24h
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  `;
+                })
+                .join('')}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // =========================================================================
+    // STATION 5: NIGHT WATCH & BESPOKE CAPTAIN'S LOG STUDIO
+    // =========================================================================
+    function renderNightView() {
+      const stages = [
+        'All',
+        'Stage 1: Sunset Transition (90–60m Out)',
+        'Stage 2: Somatic Downshift (60–30m Out)',
+        'Stage 3: Final Harbor (30–0m to Sleep)'
+      ];
+
+      const activeNightBoard = (state.nightBoardIds || [])
+        .map((id) => NIGHT_LIBRARY.find((c) => c.id === id))
+        .filter(Boolean);
+
+      const filteredNight =
+        state.nightStageFilter === 'All'
+          ? NIGHT_LIBRARY
+          : NIGHT_LIBRARY.filter((c) => c.stage === state.nightStageFilter);
+
+      return `
+        <div class="space-y-6">
+          <!-- ANALOG BEDSIDE BINDER BANNER -->
+          <div class="lh-surface rounded-2xl p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3 border-l-4" style="border-left-color: var(--accent-primary);">
+            <div class="space-y-0.5">
+              <div class="flex items-center gap-2">
+                <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full lh-badge">Zero-Screen Wind-Down</span>
+                <span class="text-xs lh-text-sec font-mono-code">3-Hole Binder Ready (8.5" × 11")</span>
+              </div>
+              <h3 class="font-bold text-base sm:text-lg lh-text-main">Print Tonight’s Analog Night Watch, Prayer &amp; Captain’s Log Sheet</h3>
+              <p class="text-xs lh-text-sec">Generate a customized 1–2 page paper worksheet with your evening checklist, prayer board, and ruled journaling lines so you can shut off all screens before bed.</p>
+            </div>
+            <button onclick="window.Lighthouse.openPdfBuilder()"
+              class="px-4 py-2.5 rounded-xl lh-btn-primary text-xs sm:text-sm flex items-center gap-2 shrink-0 shadow-md">
+              <i data-lucide="printer" class="w-4 h-4"></i>
+              <span>Build Printable Night &amp; Binder Sheet</span>
+            </button>
+          </div>
+
+          <!-- ACTIVE NIGHT WATCH BOARD -->
+          <div class="lh-surface rounded-2xl p-4 sm:p-6 space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b lh-border">
+              <div>
+                <span class="text-[11px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full lh-badge-sec">Active Evening Sequence</span>
+                <h3 class="text-lg sm:text-xl font-bold lh-text-main mt-1">My Night Watch Wind-Down Board (${activeNightBoard.length} Cards)</h3>
+                <p class="text-xs lh-text-sec">Ordered from Sunset Transition (90m out) to Final Harbor (pillow).</p>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <button onclick="window.Lighthouse.openPdfBuilder()"
+                  class="px-3 py-2 rounded-xl lh-btn-soft text-xs flex items-center gap-1.5">
+                  <i data-lucide="file-text" class="w-3.5 h-3.5"></i>
+                  <span>Customize PDF Sheet</span>
+                </button>
+                <button onclick="window.Lighthouse.pushAllNightBoardToWatch()"
+                  class="px-3.5 py-2 rounded-xl lh-btn-primary text-xs flex items-center gap-1.5">
+                  <i data-lucide="calendar-plus" class="w-3.5 h-3.5"></i>
+                  <span>Push Evening Board to 24h Watch</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              ${activeNightBoard
+                .map(
+                  (c) => `
+                  <div class="p-3.5 rounded-xl lh-elevated flex flex-col justify-between gap-2.5">
+                    <div onclick="window.Lighthouse.openNightDetail('${c.id}')" class="cursor-pointer space-y-1">
+                      <div class="flex items-center justify-between text-[10px] font-semibold lh-text-sec">
+                        <span class="truncate" style="color: var(--secondary-accent);">${escapeHtml(c.stage.split(':')[0])}</span>
+                        <span class="font-mono-code">${escapeHtml(c.defaultTime)} • ${c.durationMins}m</span>
+                      </div>
+                      <h4 class="font-bold text-sm lh-text-main">${escapeHtml(c.title)}</h4>
+                      <p class="text-xs lh-text-sec line-clamp-2">${escapeHtml(c.summary)}</p>
+                    </div>
+                    <div class="flex items-center justify-between pt-2 border-t lh-border">
+                      <button onclick="window.Lighthouse.openNightDetail('${c.id}')" class="text-[11px] font-semibold lh-text-sec hover:lh-text-main">Details</button>
+                      <div class="flex items-center gap-1">
+                        <button onclick="window.Lighthouse.pushCardToWatch('${c.id}', 'night')" class="px-2 py-1 rounded-lg lh-btn-soft text-[11px]">+ 24h</button>
+                        <button onclick="window.Lighthouse.toggleNightBoard('${c.id}')" class="p-1 lh-text-muted hover:lh-text-main"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+                      </div>
+                    </div>
+                  </div>
+                `
+                )
+                .join('')}
+            </div>
+          </div>
+
+          <!-- STAGE-CATEGORIZED NIGHT WATCH LIBRARY (18 CARDS) -->
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <h4 class="text-sm font-bold lh-text-main">Night Watch Options by Evening Stage (${filteredNight.length} Cards)</h4>
+              <span class="text-xs lh-text-sec">Tap any card for full protocol</span>
+            </div>
+            <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+              ${stages
+                .map(
+                  (st) => `
+                  <button onclick="window.Lighthouse.setNightStage('${st}')"
+                    class="px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition ${
+                      state.nightStageFilter === st ? 'lh-btn-primary' : 'lh-surface lh-text-sec'
+                    }">
+                    ${escapeHtml(st)}
+                  </button>
+                `
+                )
+                .join('')}
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              ${filteredNight
+                .map((c) => {
+                  const onBoard = (state.nightBoardIds || []).includes(c.id);
+                  const onPrint = (state.pdfConfig?.selectedNightCardIds || []).includes(c.id);
+                  return `
+                    <div class="lh-surface rounded-2xl p-4 flex flex-col justify-between gap-3">
+                      <div onclick="window.Lighthouse.openNightDetail('${c.id}')" class="cursor-pointer space-y-2">
+                        <div class="flex items-center justify-between gap-2">
+                          <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full lh-badge-sec truncate">${escapeHtml(c.stage)}</span>
+                          <span class="text-xs font-mono-code lh-text-sec shrink-0">${c.durationMins}m</span>
+                        </div>
+                        <h4 class="font-bold text-sm sm:text-base lh-text-main">${escapeHtml(c.title)}</h4>
+                        <p class="text-xs lh-text-sec leading-relaxed">${escapeHtml(c.summary)}</p>
+                      </div>
+                      <div class="pt-2.5 border-t lh-border flex items-center justify-between gap-1">
+                        <button onclick="window.Lighthouse.togglePdfNightCard('${c.id}', true)"
+                          class="text-[11px] font-semibold px-2 py-1 rounded-lg ${onPrint ? 'lh-badge-success' : 'lh-elevated lh-text-sec'} flex items-center gap-1"
+                          title="Include on Printable Binder Sheet">
+                          <i data-lucide="printer" class="w-3 h-3"></i>
+                          <span>${onPrint ? 'In PDF' : '+ PDF'}</span>
+                        </button>
+                        <div class="flex items-center gap-1">
+                          <button onclick="window.Lighthouse.toggleNightBoard('${c.id}')"
+                            class="px-2 py-1 rounded-lg text-xs font-semibold ${onBoard ? 'lh-badge-success' : 'lh-elevated lh-text-main'}">
+                            ${onBoard ? '✓ Board' : '+ Board'}
+                          </button>
+                          <button onclick="window.Lighthouse.pushCardToWatch('${c.id}', 'night')" class="px-2 py-1 rounded-lg lh-btn-primary text-xs">+ 24h</button>
+                        </div>
+                      </div>
+                    </div>
+                  `;
+                })
+                .join('')}
+            </div>
+          </div>
+
+          <!-- BESPOKE CAPTAIN'S LOG STUDIO -->
+          <div class="lh-surface rounded-2xl p-4 sm:p-6 space-y-5">
+            <div class="border-b lh-border pb-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <span class="text-[11px] font-semibold uppercase tracking-wider" style="color: var(--accent-primary);">Captain’s Log — Evening Reflection Studio</span>
+                <h3 class="text-lg sm:text-xl font-bold lh-text-main mt-0.5">Choose Tonight’s Bespoke Journaling Architecture</h3>
+                <p class="text-xs lh-text-sec">Complete on screen or print a blank 3-hole punched worksheet with ruled writing lines for your bedside binder.</p>
+              </div>
+              <button onclick="window.Lighthouse.openPdfBuilder()"
+                class="px-3.5 py-2 rounded-xl lh-btn-soft text-xs flex items-center gap-1.5 shrink-0">
+                <i data-lucide="printer" class="w-3.5 h-3.5"></i>
+                <span>Print Blank Worksheet for Bedside Binder</span>
+              </button>
+            </div>
+
+            <!-- 6 MODE SELECTOR PILLS -->
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              ${[
+                { id: 'baylor_offload', title: '1. Baylor 5-Min Task Offload', sub: 'Checklist + Push to Tomorrow' },
+                { id: 'examen', title: '2. 5-Step Biblical Examen', sub: 'All 5 Ignatian/Biblical Movements' },
+                { id: 'pennebaker', title: '3. Pennebaker Unpacking', sub: 'Affect Labeling + Reframe' },
+                { id: 'narrative', title: '4. Story-Based Gratitude', sub: 'Scene + Vivid Narrative' },
+                { id: 'closure_321', title: '5. 3-2-1 Evening Closure', sub: '3 Wins • 2 Lessons • 1 Target' },
+                { id: 'psalm4', title: '6. Psalm 4:8 Night Surrender', sub: 'Release Control & Rest' }
+              ]
+                .map((m) => {
+                  const inPdf = (state.pdfConfig?.selectedJournalModes || []).includes(m.id);
+                  return `
+                    <div class="p-3 rounded-xl transition flex flex-col justify-between gap-2 ${
+                      state.selectedJournalMode === m.id ? 'lh-btn-soft' : 'lh-elevated lh-text-main'
+                    }">
+                      <div onclick="window.Lighthouse.setJournalMode('${m.id}')" class="cursor-pointer">
+                        <p class="text-xs font-bold">${escapeHtml(m.title)}</p>
+                        <p class="text-[10px] lh-text-sec mt-0.5">${escapeHtml(m.sub)}</p>
+                      </div>
+                      <div class="flex items-center justify-between pt-1.5 border-t lh-border">
+                        <button onclick="window.Lighthouse.setJournalMode('${m.id}')" class="text-[10px] font-semibold lh-text-sec hover:lh-text-main">Open Studio</button>
+                        <button onclick="window.Lighthouse.togglePdfJournalMode('${m.id}', true)"
+                          class="text-[10px] font-semibold px-2 py-0.5 rounded-md ${inPdf ? 'lh-badge-success' : 'lh-surface lh-text-sec'}">
+                          ${inPdf ? '✓ In Print Sheet' : '+ Add to Print Sheet'}
+                        </button>
+                      </div>
+                    </div>
+                  `;
+                })
+                .join('')}
+            </div>
+
+            <!-- BESPOKE INTERFACE PER JOURNAL MODE -->
+            <div class="p-4 sm:p-5 rounded-2xl lh-elevated space-y-4">
+              ${renderBespokeJournalForm()}
+            </div>
+
+            <!-- SAVED CAPTAIN'S LOG ENTRIES -->
+            ${
+              (state.journalEntries || []).length > 0
+                ? `<div class="pt-4 border-t lh-border space-y-2.5">
+                    <h4 class="text-xs font-bold uppercase tracking-wider lh-text-sec">Saved Captain’s Logs (${state.journalEntries.length})</h4>
+                    <div class="space-y-2 max-h-64 overflow-y-auto">
+                      ${state.journalEntries
+                        .map(
+                          (entry) => `
+                          <div class="p-3.5 rounded-xl lh-elevated text-xs space-y-1">
+                            <div class="flex items-center justify-between lh-text-sec">
+                              <span class="font-bold" style="color: var(--accent-primary);">${escapeHtml(entry.framework)}</span>
+                              <span class="font-mono-code">${escapeHtml(entry.date)}</span>
+                            </div>
+                            <p class="lh-text-main whitespace-pre-line leading-relaxed">${escapeHtml(entry.summaryText)}</p>
+                          </div>
+                        `
+                        )
+                        .join('')}
+                    </div>
+                  </div>`
+                : ''
+            }
+          </div>
+        </div>
+      `;
+    }
+
+    function renderBespokeJournalForm() {
+      const mode = state.selectedJournalMode;
+
+      if (mode === 'baylor_offload') {
+        const tasks = state.baylorTasksDraft || ['', '', ''];
+        return `
+          <div class="space-y-3">
+            <div class="flex items-center justify-between flex-wrap gap-2">
+              <h4 class="font-bold text-sm sm:text-base lh-text-main">Baylor Sleep Lab 5-Minute Cognitive Offload</h4>
+              <span class="text-[11px] px-2.5 py-0.5 rounded-full lh-badge">Closes Zeigarnik Working-Memory Loops</span>
+            </div>
+            <p class="text-xs lh-text-sec">
+              Polysomnography studies show writing concrete tasks for tomorrow (rather than venting about today) quiets hippocampal rehearsal so you fall asleep significantly faster.
+            </p>
+            <div class="space-y-2">
+              ${tasks
+                .map(
+                  (t, idx) => `
+                  <div class="flex items-center gap-2">
+                    <span class="w-6 h-6 rounded-lg lh-surface text-xs font-mono-code flex items-center justify-center shrink-0">${idx + 1}</span>
+                    <input type="text" value="${escapeHtml(t)}"
+                      oninput="window.Lighthouse.updateBaylorTask(${idx}, this.value)"
+                      placeholder="${idx === 0 ? 'Top #1 priority task for tomorrow...' : 'Another open loop or errand to offload...'}"
+                      class="flex-1 px-3 py-2 rounded-xl lh-input" />
+                    <button onclick="window.Lighthouse.pushBaylorTaskToWatch(${idx})"
+                      class="px-2.5 py-2 rounded-xl lh-btn-soft text-xs shrink-0" title="Push to Tomorrow's 24h Watch">
+                      + Tomorrow 24h
+                    </button>
+                  </div>
+                `
+                )
+                .join('')}
+            </div>
+            <div class="flex flex-wrap gap-2 pt-2">
+              <button onclick="window.Lighthouse.addBaylorTaskRow()" class="px-3 py-2 rounded-xl lh-surface text-xs font-semibold lh-text-sec hover:lh-text-main">
+                + Add Another Open Loop
+              </button>
+              <button onclick="window.Lighthouse.saveBaylorLog()" class="px-4 py-2 rounded-xl lh-btn-primary text-xs">
+                Save Offload &amp; Close Loops for Tonight
+              </button>
+            </div>
+          </div>
+        `;
+      }
+
+      if (mode === 'examen') {
+        const d = state.examenDraft || { s1: '', s2: '', s3: '', s4: '', s5: '' };
+        const steps = [
+          { key: 's1', num: 'Step 1 • Gratitude (Thanksgiving)', ref: 'Psalm 103:2', prompt: 'Become aware of God’s presence and name 1–2 specific gifts or mercies from today:' },
+          { key: 's2', num: 'Step 2 • Petition for Light (Illumination)', ref: 'Psalm 139:23', prompt: 'Ask the Holy Spirit to let you see today through His eyes of truth and grace:' },
+          { key: 's3', num: 'Step 3 • Review Consolation & Desolation', ref: 'Lamentations 3:40', prompt: 'Where did you feel spiritually alive and peaceful today (consolation), and where did you feel drained or reactive (desolation)?' },
+          { key: 's4', num: 'Step 4 • Forgiveness & Healing', ref: '1 John 1:9', prompt: 'Where did you fall short in love, patience, or attention today? Receive Christ’s cleansing:' },
+          { key: 's5', num: 'Step 5 • Grace for Tomorrow (Resolution)', ref: 'Philippians 3:13-14', prompt: 'How are you inviting Jesus to walk with you in tomorrow’s schedule?' }
+        ];
+        return `
+          <div class="space-y-4">
+            <div class="flex items-center justify-between flex-wrap gap-2">
+              <h4 class="font-bold text-sm sm:text-base lh-text-main">The 5-Step Biblical Examen</h4>
+              <span class="text-[11px] px-2.5 py-0.5 rounded-full lh-badge">All 5 Classic Spiritual Movements</span>
+            </div>
+            <div class="space-y-3">
+              ${steps
+                .map(
+                  (st) => `
+                  <div class="p-3.5 rounded-xl lh-surface space-y-1.5">
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs font-bold" style="color: var(--accent-primary);">${st.num}</span>
+                      <span class="text-[11px] font-mono-code lh-text-sec">${st.ref}</span>
+                    </div>
+                    <label class="text-xs lh-text-sec block">${st.prompt}</label>
+                    <textarea rows="2" oninput="window.Lighthouse.updateExamenStep('${st.key}', this.value)"
+                      placeholder="Reflect here..."
+                      class="w-full p-2.5 rounded-xl lh-input">${escapeHtml(d[st.key] || '')}</textarea>
+                  </div>
+                `
+                )
+                .join('')}
+            </div>
+            <button onclick="window.Lighthouse.saveExamenLog()" class="px-5 py-2.5 rounded-xl lh-btn-primary text-xs">
+              Complete &amp; Save 5-Step Examen
+            </button>
+          </div>
+        `;
+      }
+
+      if (mode === 'pennebaker') {
+        const d = state.pennebakerDraft || { raw: '', reframe: '', intensity: 5 };
+        return `
+          <div class="space-y-3.5">
+            <div class="flex items-center justify-between flex-wrap gap-2">
+              <h4 class="font-bold text-sm sm:text-base lh-text-main">Pennebaker Expressive Unpacking (Affect Labeling)</h4>
+              <span class="text-[11px] px-2.5 py-0.5 rounded-full lh-badge">rvlPFC Amygdala Brake</span>
+            </div>
+            <div class="p-3 rounded-xl lh-surface flex items-center justify-between gap-4">
+              <span class="text-xs font-semibold lh-text-main">Current Mental / Emotional Tension Level: <strong style="color: var(--accent-primary);">${d.intensity}/10</strong></span>
+              <input type="range" min="1" max="10" value="${d.intensity}"
+                oninput="window.Lighthouse.updatePennebaker('intensity', this.value)" class="w-40" />
+            </div>
+            <div class="space-y-1.5">
+              <label class="text-xs font-semibold lh-text-main block">1. Raw Unfiltered Stream (Don’t edit or censor—name the exact frustration or weight):</label>
+              <textarea rows="4" oninput="window.Lighthouse.updatePennebaker('raw', this.value)"
+                placeholder="Write continuously for 3–4 minutes about what weighed on you today..."
+                class="w-full p-3 rounded-xl lh-input">${escapeHtml(d.raw)}</textarea>
+            </div>
+            <div class="space-y-1.5">
+              <label class="text-xs font-semibold lh-text-main block">2. Prefrontal Cognitive Reframe &amp; Truth Anchor:</label>
+              <textarea rows="2" oninput="window.Lighthouse.updatePennebaker('reframe', this.value)"
+                placeholder="Now that it is on paper, what biblical truth or objective perspective steadies you?"
+                class="w-full p-3 rounded-xl lh-input">${escapeHtml(d.reframe)}</textarea>
+            </div>
+            <button onclick="window.Lighthouse.savePennebakerLog()" class="px-5 py-2.5 rounded-xl lh-btn-primary text-xs">
+              Save Expressive Unpacking
+            </button>
+          </div>
+        `;
+      }
+
+      if (mode === 'narrative') {
+        const d = state.narrativeDraft || { scene: '', story: '', meaning: '' };
+        return `
+          <div class="space-y-3.5">
+            <div class="flex items-center justify-between flex-wrap gap-2">
+              <h4 class="font-bold text-sm sm:text-base lh-text-main">Story-Based Narrative Gratitude</h4>
+              <span class="text-[11px] px-2.5 py-0.5 rounded-full lh-badge">Anterior Cingulate &amp; Serotonin Depth</span>
+            </div>
+            <p class="text-xs lh-text-sec">Reliving ONE specific story in sensory detail activates deeper neural gratitude circuits than a generic bullet list.</p>
+            <input type="text" value="${escapeHtml(d.scene)}"
+              oninput="window.Lighthouse.updateNarrative('scene', this.value)"
+              placeholder="1. The Scene: Where were you and who was there? (e.g., Kitchen table with Regla, walking outside...)"
+              class="w-full px-3 py-2.5 rounded-xl lh-input" />
+            <textarea rows="3" oninput="window.Lighthouse.updateNarrative('story', this.value)"
+              placeholder="2. The Story: Replay what happened in vivid sensory detail..."
+              class="w-full p-3 rounded-xl lh-input">${escapeHtml(d.story)}</textarea>
+            <input type="text" value="${escapeHtml(d.meaning)}"
+              oninput="window.Lighthouse.updateNarrative('meaning', this.value)"
+              placeholder="3. Heart Takeaway: Why did this gift from God matter to you today?"
+              class="w-full px-3 py-2.5 rounded-xl lh-input" />
+            <button onclick="window.Lighthouse.saveNarrativeLog()" class="px-5 py-2.5 rounded-xl lh-btn-primary text-xs">
+              Save Narrative Gratitude Story
+            </button>
+          </div>
+        `;
+      }
+
+      if (mode === 'closure_321') {
+        const d = state.closure321Draft || { w1: '', w2: '', w3: '', l1: '', l2: '', p1: '' };
+        return `
+          <div class="space-y-3.5">
+            <h4 class="font-bold text-sm sm:text-base lh-text-main">The 3-2-1 Evening Closure</h4>
+            <div class="space-y-2">
+              <span class="text-xs font-bold uppercase tracking-wider" style="color: var(--success-accent);">3 Wins or Gifts from Today</span>
+              <input type="text" value="${escapeHtml(d.w1)}" oninput="window.Lighthouse.update321('w1', this.value)" placeholder="Win #1..." class="w-full px-3 py-2 rounded-xl lh-input" />
+              <input type="text" value="${escapeHtml(d.w2)}" oninput="window.Lighthouse.update321('w2', this.value)" placeholder="Win #2..." class="w-full px-3 py-2 rounded-xl lh-input" />
+              <input type="text" value="${escapeHtml(d.w3)}" oninput="window.Lighthouse.update321('w3', this.value)" placeholder="Win #3..." class="w-full px-3 py-2 rounded-xl lh-input" />
+            </div>
+            <div class="space-y-2">
+              <span class="text-xs font-bold uppercase tracking-wider" style="color: var(--secondary-accent);">2 Lessons or Adjustments</span>
+              <input type="text" value="${escapeHtml(d.l1)}" oninput="window.Lighthouse.update321('l1', this.value)" placeholder="Lesson #1..." class="w-full px-3 py-2 rounded-xl lh-input" />
+              <input type="text" value="${escapeHtml(d.l2)}" oninput="window.Lighthouse.update321('l2', this.value)" placeholder="Lesson #2..." class="w-full px-3 py-2 rounded-xl lh-input" />
+            </div>
+            <div class="space-y-2">
+              <span class="text-xs font-bold uppercase tracking-wider" style="color: var(--accent-primary);">1 Primary Intention for Tomorrow</span>
+              <input type="text" value="${escapeHtml(d.p1)}" oninput="window.Lighthouse.update321('p1', this.value)" placeholder="Tomorrow’s #1 focus..." class="w-full px-3 py-2 rounded-xl lh-input" />
+            </div>
+            <button onclick="window.Lighthouse.save321Log()" class="px-5 py-2.5 rounded-xl lh-btn-primary text-xs">
+              Save 3-2-1 Closure
+            </button>
+          </div>
+        `;
+      }
+
+      const d = state.psalm4Draft || { burdens: '', prayer: '' };
+      return `
+        <div class="space-y-3.5">
+          <div class="p-3.5 rounded-xl lh-surface">
+            <p class="font-serif-editorial italic text-base sm:text-lg lh-text-main">
+              “In peace I will both lie down and sleep, for You alone, O Lord, make me to dwell in safety.” — Psalm 4:8
+            </p>
+          </div>
+          <div class="space-y-1.5">
+            <label class="text-xs font-semibold lh-text-main block">1. Unfinished Outcomes I Am Handing Over to God Tonight:</label>
+            <textarea rows="2" oninput="window.Lighthouse.updatePsalm4('burdens', this.value)"
+              placeholder="Name the family needs, work outcomes, or tomorrow concerns you are releasing..."
+              class="w-full p-3 rounded-xl lh-input">${escapeHtml(d.burdens)}</textarea>
+          </div>
+          <div class="space-y-1.5">
+            <label class="text-xs font-semibold lh-text-main block">2. Written Prayer of Surrender:</label>
+            <textarea rows="2" oninput="window.Lighthouse.updatePsalm4('prayer', this.value)"
+              placeholder="Lord, You neither slumber nor sleep. I entrust the night watch to You..."
+              class="w-full p-3 rounded-xl lh-input">${escapeHtml(d.prayer)}</textarea>
+          </div>
+          <button onclick="window.Lighthouse.savePsalm4Log()" class="px-5 py-2.5 rounded-xl lh-btn-primary text-xs">
+            Entrust to God &amp; Save Log
+          </button>
+        </div>
+      `;
+    }
+
+    // =========================================================================
+    // STATION 6: PRAYER SANCTUARY (MAIN BOARD + INTERCESSION + JESUS + P.R.A.Y.)
+    // =========================================================================
+    function renderPrayerCategorySelectHtml(selectId, customInputId, defaultVal = 'Marriage & Regla') {
+      return `
+        <div class="space-y-2">
+          <select id="${selectId}"
+            onchange="window.Lighthouse.handlePrayerCategoryChange('${selectId}', '${customInputId}')"
+            class="w-full px-3 py-2.5 rounded-xl lh-input">
+            ${PRAYER_CATEGORY_OPTIONS.map(
+              (opt) => `<option value="${escapeHtml(opt)}" ${opt === defaultVal ? 'selected' : ''}>${escapeHtml(opt)}</option>`
+            ).join('')}
+          </select>
+          <input id="${customInputId}" type="text"
+            placeholder="Type your custom category name..."
+            class="hidden w-full px-3 py-2.5 rounded-xl lh-input" />
+        </div>
+      `;
+    }
+
+    function renderPrayerView() {
+      const activeBoardCards = (state.prayerCards || []).filter((c) => !c.isAnswered && c.onActiveBoard);
+      const allIntercessionCards = (state.prayerCards || []).filter((c) => !c.isAnswered);
+      const answeredCards = (state.prayerCards || []).filter((c) => c.isAnswered);
+      const sub = state.prayerSubTab || 'board';
+
+      const praySteps = [
+        {
+          code: 'P',
+          title: 'Pause & Be Still (Psalm 46:10)',
+          verse: '“Cease striving and know that I am God.” (NASB) • “Be still, and know that I am God!” (NLT)',
+          prompt: 'Take 3 slow nasal breaths. Release the velocity of your workday and become present to the Father who is already here.'
+        },
+        {
+          code: 'R',
+          title: 'Rejoice & Hallow His Name (Matthew 6:9)',
+          verse: '“Our Father who is in heaven, Hallowed be Your name.” (NASB)',
+          prompt: 'Adore God for His character—His faithfulness, mercy, and sovereignty—and thank Him aloud for 2 gifts from the last 24 hours.'
+        },
+        {
+          code: 'A',
+          title: 'Ask & Intercede (Matthew 6:11 • John 15:7)',
+          verse: '“Give us this day our daily bread.” (NASB) • “Ask whatever you wish, and it will be done for you.”',
+          prompt: 'Lift up Regla, your family, the Sunday Safety Team, and the specific cards pinned to your Active Prayer Board below.'
+        },
+        {
+          code: 'Y',
+          title: 'Yield & Surrender (Luke 22:42 • Psalm 4:8)',
+          verse: '“Yet not My will, but Yours be done.” (NASB)',
+          prompt: 'Open your hands physically. Hand over any unfinished projects, family concerns, or tomorrow’s uncertainties into the Father’s care.'
+        }
+      ];
+      const curStep = praySteps[state.guidedStepIndex || 0] || praySteps[0];
+
+      return `
+        <div class="space-y-6">
+          <!-- DEDICATED MAIN ACTIVE PRAYER BOARD -->
+          <div class="lh-surface rounded-2xl p-4 sm:p-6 space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b lh-border">
+              <div>
+                <span class="text-[11px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full lh-badge">Sanctuary Main Board</span>
+                <h3 class="text-lg sm:text-xl font-bold lh-text-main mt-1">Today’s Active Prayer Watch (${activeBoardCards.length} Pinned)</h3>
+                <p class="text-xs lh-text-sec">Quickly add a prayer right from your phone below, tap any card for details, or print your screen-free Night Binder Sheet.</p>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <button onclick="window.Lighthouse.openPdfBuilder()"
+                  class="px-3.5 py-2 rounded-xl lh-btn-soft text-xs flex items-center gap-1.5">
+                  <i data-lucide="printer" class="w-3.5 h-3.5"></i>
+                  <span>Print Prayer &amp; Night Binder Sheet</span>
+                </button>
+                <button onclick="window.Lighthouse.pushPrayerBlockToWatch()"
+                  class="px-3.5 py-2 rounded-xl lh-btn-primary text-xs flex items-center gap-1.5">
+                  <i data-lucide="calendar-plus" class="w-3.5 h-3.5"></i>
+                  <span>Schedule Prayer on 24h Watch</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- THUMB-FRIENDLY MOBILE QUICK-ADD PRAYER BAR -->
+            <div class="p-3.5 sm:p-4 rounded-2xl lh-elevated space-y-3 border-l-4" style="border-left-color: var(--accent-primary);">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5" style="color: var(--accent-primary);">
+                  <i data-lucide="plus-circle" class="w-4 h-4"></i>
+                  <span>Quick-Add Prayer to Board</span>
+                </span>
+                <label class="flex items-center gap-1.5 text-xs lh-text-sec cursor-pointer select-none">
+                  <input id="quick-pray-pin" type="checkbox" checked class="w-4 h-4 rounded" />
+                  <span>Pin to Active Watch</span>
+                </label>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                <div class="sm:col-span-5">
+                  <input id="quick-pray-title" type="text"
+                    onkeydown="if(event.key==='Enter') window.Lighthouse.quickAddPrayerCard()"
+                    placeholder="Who or what are you praying for?"
+                    class="w-full px-3.5 py-2.5 rounded-xl lh-input" />
+                </div>
+                <div class="sm:col-span-4">
+                  ${renderPrayerCategorySelectHtml('quick-pray-cat', 'quick-pray-custom-cat', 'Marriage & Regla')}
+                </div>
+                <div class="sm:col-span-3">
+                  <button onclick="window.Lighthouse.quickAddPrayerCard()"
+                    class="w-full h-full min-h-[44px] py-2.5 px-4 rounded-xl lh-btn-primary text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 shadow-sm">
+                    <i data-lucide="plus" class="w-4 h-4"></i>
+                    <span>+ Add to Prayer Board</span>
+                  </button>
+                </div>
+              </div>
+
+              <details class="text-xs lh-text-sec">
+                <summary class="cursor-pointer font-medium hover:lh-text-main select-none">+ Add optional Scripture anchor or request notes</summary>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2.5">
+                  <input id="quick-pray-ref" type="text" placeholder="Scripture (e.g. Phil 4:6-7)" class="px-3 py-2 rounded-xl lh-input" />
+                  <input id="quick-pray-notes" type="text" placeholder="Specific request details or praise note..." class="sm:col-span-2 px-3 py-2 rounded-xl lh-input" />
+                </div>
+              </details>
+            </div>
+
+            ${
+              activeBoardCards.length === 0
+                ? `<p class="text-xs lh-text-sec py-4 text-center">No cards pinned to your Active Prayer Board yet. Use the Quick-Add bar above or tap "+ Pin Board" on any card below.</p>`
+                : `<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    ${activeBoardCards
+                      .map(
+                        (c) => `
+                        <div class="p-3.5 rounded-xl lh-elevated flex flex-col justify-between gap-3">
+                          <div onclick="window.Lighthouse.openPrayerCardDetail('${c.id}')" class="cursor-pointer space-y-1.5">
+                            <div class="flex items-center justify-between gap-1.5">
+                              <span class="text-[10px] font-semibold uppercase tracking-wider truncate" style="color: var(--accent-primary);">${escapeHtml(c.category)}</span>
+                              <span class="text-[10px] font-mono-code lh-text-sec shrink-0">${c.prayedCount || 0}x</span>
+                            </div>
+                            <h4 class="font-bold text-sm lh-text-main leading-snug">${escapeHtml(c.title)}</h4>
+                            <p class="text-[11px] font-mono-code lh-text-sec">${escapeHtml(c.scriptureTag || '')}</p>
+                            <p class="text-xs lh-text-sec line-clamp-2">${escapeHtml(c.notes || '')}</p>
+                          </div>
+                          <div class="pt-2 border-t lh-border flex items-center justify-between gap-1.5">
+                            <button onclick="window.Lighthouse.prayForCard('${c.id}')"
+                              class="flex-1 py-2 px-2.5 rounded-xl lh-btn-primary text-xs flex items-center justify-center gap-1">
+                              <i data-lucide="heart" class="w-3.5 h-3.5"></i>
+                              <span>Amen (+1)</span>
+                            </button>
+                            <button onclick="window.Lighthouse.openPrayerCardDetail('${c.id}')"
+                              class="p-2 rounded-xl lh-surface lh-text-sec hover:lh-text-main" title="Details">
+                              <i data-lucide="book-open" class="w-4 h-4"></i>
+                            </button>
+                            <button onclick="window.Lighthouse.togglePrayerBoardPin('${c.id}')"
+                              class="p-2 rounded-xl lh-surface lh-text-muted hover:lh-text-main" title="Unpin from Active Board">
+                              <i data-lucide="x" class="w-4 h-4"></i>
+                            </button>
+                          </div>
+                        </div>
+                      `
+                      )
+                      .join('')}
+                  </div>`
+            }
+          </div>
+
+          <!-- SANCTUARY SUB-NAVIGATION TABS -->
+          <div class="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+            ${[
+              { id: 'board', label: `All Intercession Cards (${allIntercessionCards.length})` },
+              { id: 'jesus', label: `Jesus’s Prayer Teachings (${JESUS_PRAYER_THEMES.length})` },
+              { id: 'guided', label: 'Guided P.R.A.Y. Sanctuary' },
+              { id: 'ebenezer', label: `Answered Ebenezer Vault (${answeredCards.length})` }
+            ]
+              .map(
+                (t) => `
+                <button onclick="window.Lighthouse.setPrayerSubTab('${t.id}')"
+                  class="px-3.5 py-2.5 rounded-xl text-xs font-semibold shrink-0 transition ${
+                    sub === t.id ? 'lh-btn-primary' : 'lh-surface lh-text-sec hover:lh-text-main'
+                  }">
+                  ${escapeHtml(t.label)}
+                </button>
+              `
+              )
+              .join('')}
+          </div>
+
+          ${
+            sub === 'board'
+              ? `
+                <div class="space-y-4">
+                  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                    ${allIntercessionCards
+                      .map(
+                        (c) => `
+                        <div class="lh-surface rounded-2xl p-4 flex flex-col justify-between gap-3">
+                          <div onclick="window.Lighthouse.openPrayerCardDetail('${c.id}')" class="cursor-pointer space-y-1.5">
+                            <div class="flex items-center justify-between gap-2">
+                              <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full lh-badge">${escapeHtml(c.category)}</span>
+                              <span class="text-xs font-mono-code lh-text-sec">Prayed ${c.prayedCount || 0}x • ${escapeHtml(c.lastPrayed || 'New')}</span>
+                            </div>
+                            <h4 class="font-bold text-sm sm:text-base lh-text-main">${escapeHtml(c.title)}</h4>
+                            <p class="text-xs font-mono-code" style="color: var(--secondary-accent);">${escapeHtml(c.scriptureTag || '')}</p>
+                            <p class="text-xs lh-text-sec leading-relaxed">${escapeHtml(c.notes || '')}</p>
+                          </div>
+                          <div class="pt-2.5 border-t lh-border flex items-center justify-between gap-2">
+                            <button onclick="window.Lighthouse.prayForCard('${c.id}')" class="py-2 px-3 rounded-xl lh-btn-primary text-xs font-bold">
+                              Amen (+1)
+                            </button>
+                            <div class="flex items-center gap-1.5">
+                              <button onclick="window.Lighthouse.togglePrayerBoardPin('${c.id}')"
+                                class="py-2 px-3 rounded-xl text-xs font-bold ${c.onActiveBoard ? 'lh-badge-success' : 'lh-btn-soft'}">
+                                ${c.onActiveBoard ? '✓ On Board' : '+ Pin Board'}
+                              </button>
+                              <button onclick="window.Lighthouse.markPrayerAnswered('${c.id}')"
+                                class="py-2 px-2.5 rounded-xl lh-elevated lh-text-sec hover:lh-text-main text-xs font-semibold">
+                                Answered
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      `
+                      )
+                      .join('')}
+                  </div>
+                </div>
+              `
+              : ''
+          }
+
+          ${
+            sub === 'jesus'
+              ? `
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                  ${JESUS_PRAYER_THEMES.map((t) => {
+                    const inPdf = (state.pdfConfig?.selectedJesusThemeIds || []).includes(t.id);
+                    return `
+                      <div class="lh-surface rounded-2xl p-4 flex flex-col justify-between gap-3">
+                        <div onclick="window.Lighthouse.openJesusTeachingDetail('${t.id}')" class="cursor-pointer space-y-2">
+                          <div class="flex items-center justify-between gap-2">
+                            <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full lh-badge">${escapeHtml(t.category)}</span>
+                            <span class="text-xs font-mono-code lh-text-sec">${escapeHtml(t.reference)}</span>
+                          </div>
+                          <h4 class="font-bold text-sm sm:text-base lh-text-main leading-snug">${escapeHtml(t.theme)}</h4>
+                          <p class="text-xs lh-text-sec leading-relaxed">${escapeHtml(t.summary)}</p>
+                          <p class="text-xs italic font-serif-editorial lh-text-main pt-1">“${escapeHtml(t.samplePrayer)}”</p>
+                        </div>
+                        <div class="pt-2.5 border-t lh-border flex items-center justify-between gap-1.5">
+                          <button onclick="window.Lighthouse.openJesusTeachingDetail('${t.id}')"
+                            class="text-xs font-semibold lh-text-sec hover:lh-text-main flex items-center gap-1 py-1.5">
+                            <i data-lucide="book-open" class="w-3.5 h-3.5" style="color: var(--accent-primary);"></i>
+                            <span>NASB / NLT</span>
+                          </button>
+                          <div class="flex items-center gap-1.5">
+                            <button onclick="window.Lighthouse.togglePdfJesusTheme('${t.id}', true)"
+                              class="px-2.5 py-2 rounded-xl text-xs font-semibold ${inPdf ? 'lh-badge-success' : 'lh-elevated lh-text-sec'}">
+                              ${inPdf ? '✓ PDF' : '+ PDF'}
+                            </button>
+                            <button onclick="window.Lighthouse.addJesusThemeToBoard('${t.id}')"
+                              class="px-3 py-2 rounded-xl lh-btn-primary text-xs font-bold">
+                              + Pin Board
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              `
+              : ''
+          }
+
+          ${
+            sub === 'guided'
+              ? `
+                <div class="lh-surface rounded-2xl p-5 sm:p-6 space-y-5">
+                  <div class="flex items-center justify-between flex-wrap gap-2 border-b lh-border pb-3">
+                    <div>
+                      <span class="text-[11px] font-semibold uppercase tracking-wider" style="color: var(--accent-primary);">Lectio 365 Guided Method</span>
+                      <h4 class="text-lg font-bold lh-text-main">Step ${(state.guidedStepIndex || 0) + 1} of 4: ${escapeHtml(curStep.title)}</h4>
+                    </div>
+                  </div>
+                  <div class="p-4 rounded-xl lh-elevated space-y-2">
+                    <p class="font-serif-editorial italic text-base sm:text-lg lh-text-main">${escapeHtml(curStep.verse)}</p>
+                    <p class="text-xs sm:text-sm lh-text-sec leading-relaxed">${escapeHtml(curStep.prompt)}</p>
+                  </div>
+                  <div class="flex items-center justify-between pt-2">
+                    <button onclick="window.Lighthouse.stepGuidedPrayer(-1)" class="px-4 py-2 rounded-xl lh-elevated text-xs font-semibold lh-text-sec">
+                      ← Previous Step
+                    </button>
+                    <button onclick="window.Lighthouse.stepGuidedPrayer(1)" class="px-5 py-2.5 rounded-xl lh-btn-primary text-xs">
+                      ${(state.guidedStepIndex || 0) === 3 ? 'Amen • Complete Sanctuary' : 'Next Movement →'}
+                    </button>
+                  </div>
+                </div>
+              `
+              : ''
+          }
+
+          ${
+            sub === 'ebenezer'
+              ? `
+                <div class="lh-surface rounded-2xl p-4 sm:p-5 space-y-3">
+                  <h4 class="font-bold text-base lh-text-main">Ebenezer Vault — “Thus Far the Lord Has Helped Us” (1 Samuel 7:12)</h4>
+                  ${
+                    answeredCards.length === 0
+                      ? `<p class="text-xs lh-text-sec py-4">When God answers a prayer on your board, tap "Answered" to record it permanently in this memorial vault.</p>`
+                      : `<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          ${answeredCards
+                            .map(
+                              (c) => `
+                              <div class="p-3.5 rounded-xl lh-elevated space-y-1">
+                                <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full lh-badge-success">Answered • ${c.prayedCount || 1} Prayers Logged</span>
+                                <h5 class="font-bold text-sm lh-text-main pt-1">${escapeHtml(c.title)}</h5>
+                                <p class="text-xs lh-text-sec">${escapeHtml(c.notes || '')}</p>
+                              </div>
+                            `
+                            )
+                            .join('')}
+                        </div>`
+                  }
+                </div>
+              `
+              : ''
+          }
+        </div>
+      `;
+    }
+
+    // =========================================================================
+    // PAGE-SPECIFIC ACTIONS (MORNING, NIGHT, CAPTAIN'S LOG, PRAYER)
+    // =========================================================================
+    const pageActions = {
+      // Progressive Disclosure Detail Modals
+      openMorningDetail(cardId) {
+        const c = MORNING_LIBRARY.find((item) => item.id === cardId);
+        if (!c) return;
+        const onBoard = (state.morningBoardIds || []).includes(c.id);
+        openDetailModal({
+          category: c.category,
+          title: c.title,
+          meta: `${c.defaultTime} • ${c.durationMins} mins • ${c.neuroPrinciple}`,
+          bodyHtml: `
+            <div class="p-3.5 rounded-xl lh-elevated space-y-1">
+              <span class="text-[11px] font-bold uppercase tracking-wider" style="color: var(--accent-primary);">Why It Works (Neuroscience &amp; Physiology)</span>
+              <p class="text-xs sm:text-sm lh-text-main leading-relaxed">${escapeHtml(c.scienceDetail)}</p>
+            </div>
+            <div class="p-3.5 rounded-xl lh-elevated space-y-1">
+              <span class="text-[11px] font-bold uppercase tracking-wider" style="color: var(--secondary-accent);">Biblical Wisdom (${escapeHtml(c.scriptureRef)})</span>
+              <p class="text-xs sm:text-sm lh-text-main leading-relaxed">${escapeHtml(c.scriptureDetail)}</p>
+            </div>
+            <div class="p-3.5 rounded-xl lh-surface space-y-1">
+              <span class="text-[11px] font-bold uppercase tracking-wider" style="color: var(--success-accent);">Action Protocol</span>
+              <p class="text-xs sm:text-sm lh-text-main leading-relaxed">${escapeHtml(c.actionSteps)}</p>
+            </div>
+          `,
+          actionsHtml: `
+            <button onclick="window.Lighthouse.toggleMorningBoard('${c.id}'); window.Lighthouse.closeDetailModal();"
+              class="flex-1 py-2.5 px-4 rounded-xl lh-btn-soft text-xs">
+              ${onBoard ? 'Remove from My Morning Board' : '+ Add to My Morning Board'}
+            </button>
+            <button onclick="window.Lighthouse.pushCardToWatch('${c.id}', 'morning'); window.Lighthouse.closeDetailModal();"
+              class="flex-1 py-2.5 px-4 rounded-xl lh-btn-primary text-xs">
+              + Push to Today’s 24h Watch (${escapeHtml(c.defaultTime)})
+            </button>
+          `
+        });
+      },
+
+      openNightDetail(cardId) {
+        const c = NIGHT_LIBRARY.find((item) => item.id === cardId);
+        if (!c) return;
+        const onBoard = (state.nightBoardIds || []).includes(c.id);
+        openDetailModal({
+          category: c.stage,
+          title: c.title,
+          meta: `${c.defaultTime} • ${c.durationMins} mins • ${c.neuroPrinciple}`,
+          bodyHtml: `
+            <div class="p-3.5 rounded-xl lh-elevated space-y-1">
+              <span class="text-[11px] font-bold uppercase tracking-wider" style="color: var(--accent-primary);">Sleep Neuroscience</span>
+              <p class="text-xs sm:text-sm lh-text-main leading-relaxed">${escapeHtml(c.scienceDetail)}</p>
+            </div>
+            <div class="p-3.5 rounded-xl lh-elevated space-y-1">
+              <span class="text-[11px] font-bold uppercase tracking-wider" style="color: var(--secondary-accent);">Scripture Anchor (${escapeHtml(c.scriptureRef)})</span>
+              <p class="text-xs sm:text-sm lh-text-main leading-relaxed">${escapeHtml(c.scriptureDetail)}</p>
+            </div>
+            <div class="p-3.5 rounded-xl lh-surface space-y-1">
+              <span class="text-[11px] font-bold uppercase tracking-wider" style="color: var(--success-accent);">Evening Action Step</span>
+              <p class="text-xs sm:text-sm lh-text-main leading-relaxed">${escapeHtml(c.actionSteps)}</p>
+            </div>
+          `,
+          actionsHtml: `
+            <button onclick="window.Lighthouse.toggleNightBoard('${c.id}'); window.Lighthouse.closeDetailModal();"
+              class="flex-1 py-2.5 px-4 rounded-xl lh-btn-soft text-xs">
+              ${onBoard ? 'Remove from Night Board' : '+ Add to Night Board'}
+            </button>
+            <button onclick="window.Lighthouse.togglePdfNightCard('${c.id}', true); window.Lighthouse.closeDetailModal();"
+              class="py-2.5 px-4 rounded-xl lh-elevated lh-text-main text-xs font-semibold">
+              + Add to Printable PDF
+            </button>
+            <button onclick="window.Lighthouse.pushCardToWatch('${c.id}', 'night'); window.Lighthouse.closeDetailModal();"
+              class="flex-1 py-2.5 px-4 rounded-xl lh-btn-primary text-xs">
+              + Push to Tonight’s 24h Watch (${escapeHtml(c.defaultTime)})
+            </button>
+          `
+        });
+      },
+
+      openPrayerCardDetail(cardId) {
+        const c = (state.prayerCards || []).find((item) => item.id === cardId);
+        if (!c) return;
+        openDetailModal({
+          category: c.category,
+          title: c.title,
+          meta: `Prayed ${c.prayedCount} times • Last: ${c.lastPrayed} • ${c.scriptureTag || ''}`,
+          bodyHtml: `
+            <div class="p-4 rounded-xl lh-elevated space-y-2">
+              <span class="text-[11px] font-bold uppercase tracking-wider" style="color: var(--accent-primary);">Intercession Focus &amp; Notes</span>
+              <p class="text-sm lh-text-main leading-relaxed">${escapeHtml(c.notes)}</p>
+            </div>
+          `,
+          actionsHtml: `
+            <button onclick="window.Lighthouse.prayForCard('${c.id}'); window.Lighthouse.closeDetailModal();"
+              class="flex-1 py-2.5 px-4 rounded-xl lh-btn-primary text-xs">
+              Amen • Log Prayer Today
+            </button>
+            <button onclick="window.Lighthouse.markPrayerAnswered('${c.id}'); window.Lighthouse.closeDetailModal();"
+              class="py-2.5 px-4 rounded-xl lh-btn-soft text-xs">
+              Mark Answered (Ebenezer)
+            </button>
+          `
+        });
+      },
+
+      openJesusTeachingDetail(themeId) {
+        const item = JESUS_PRAYER_THEMES.find((t) => t.id === themeId);
+        if (!item) return;
+        openDetailModal({
+          category: `${item.category} • ${item.reference}`,
+          title: item.theme,
+          meta: 'What Jesus Taught Us to Pray For (NASB & NLT Study)',
+          bodyHtml: `
+            <div class="p-3.5 rounded-xl lh-elevated space-y-1">
+              <span class="text-[11px] font-bold uppercase tracking-wider" style="color: var(--accent-primary);">NASB Structural Study Lens</span>
+              <p class="text-xs sm:text-sm lh-text-main leading-relaxed">${escapeHtml(item.nasbLens)}</p>
+            </div>
+            <div class="p-3.5 rounded-xl lh-elevated space-y-1">
+              <span class="text-[11px] font-bold uppercase tracking-wider" style="color: var(--secondary-accent);">NLT Relational Heart Lens</span>
+              <p class="text-xs sm:text-sm lh-text-main leading-relaxed">${escapeHtml(item.nltLens)}</p>
+            </div>
+            <div class="p-3.5 rounded-xl lh-surface space-y-1">
+              <span class="text-[11px] font-bold uppercase tracking-wider" style="color: var(--success-accent);">Sample Prayer Prompt</span>
+              <p class="font-serif-editorial italic text-base lh-text-main">“${escapeHtml(item.samplePrayer)}”</p>
+            </div>
+          `,
+          actionsHtml: `
+            <button onclick="window.Lighthouse.addJesusThemeToBoard('${item.id}'); window.Lighthouse.closeDetailModal();"
+              class="w-full py-2.5 px-4 rounded-xl lh-btn-primary text-xs">
+              + Pin This Teaching to My Active Prayer Board
+            </button>
+          `
+        });
+      },
+
+      // Morning & Night Board Handlers
+      setMorningCategory(cat) {
+        state.morningCategoryFilter = cat;
+        renderApp();
+      },
+      toggleMorningBoard(cardId) {
+        const exists = (state.morningBoardIds || []).includes(cardId);
+        state.morningBoardIds = exists
+          ? state.morningBoardIds.filter((id) => id !== cardId)
+          : [...(state.morningBoardIds || []), cardId];
+        saveState();
+        renderApp();
+        showToast(exists ? 'Removed from Morning Board.' : 'Added to My Morning Board!');
+      },
+      load30MinWorkoutPreset() {
+        const rampIds = ['mw-1', 'mw-2', 'mw-3', 'mw-4', 'mw-5'];
+        state.morningBoardIds = Array.from(new Set([...rampIds, ...(state.morningBoardIds || [])]));
+        saveState();
+        renderApp();
+        showToast('Loaded all 5 Wake-to-Workout (30m Ramp) cards onto your board!');
+      },
+      pushCardToWatch(cardId, type) {
+        if (state.planLocked) return showToast('Unlock 24h Watchtower first.');
+        const lib = type === 'morning' ? MORNING_LIBRARY : NIGHT_LIBRARY;
+        const c = lib.find((i) => i.id === cardId);
+        if (!c) return;
+        state.planBlocks.push({
+          id: `pb-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+          title: c.title,
+          startTime: c.defaultTime || '06:00',
+          durationMins: c.durationMins || 10,
+          category: type,
+          completed: false,
+          dayOffset: 0
+        });
+        saveState();
+        showToast(`Pushed "${c.title}" to 24h Watchtower!`);
+      },
+      pushAllMorningBoardToWatch() {
+        if (state.planLocked) return showToast('Unlock 24h Watchtower first.');
+        const cards = (state.morningBoardIds || []).map((id) => MORNING_LIBRARY.find((c) => c.id === id)).filter(Boolean);
+        cards.forEach((c) => {
+          state.planBlocks.push({
+            id: `pb-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            title: c.title,
+            startTime: c.defaultTime,
+            durationMins: c.durationMins,
+            category: 'morning',
+            completed: false,
+            dayOffset: 0
+          });
+        });
+        saveState();
+        showToast(`Pushed ${cards.length} Morning Board cards to today’s 24h Watchtower!`);
+      },
+      setNightStage(st) {
+        state.nightStageFilter = st;
+        renderApp();
+      },
+      toggleNightBoard(cardId) {
+        const exists = (state.nightBoardIds || []).includes(cardId);
+        state.nightBoardIds = exists
+          ? state.nightBoardIds.filter((id) => id !== cardId)
+          : [...(state.nightBoardIds || []), cardId];
+        saveState();
+        renderApp();
+        showToast(exists ? 'Removed from Night Board.' : 'Added to Night Watch Board!');
+      },
+      pushAllNightBoardToWatch() {
+        if (state.planLocked) return showToast('Unlock 24h Watchtower first.');
+        const cards = (state.nightBoardIds || []).map((id) => NIGHT_LIBRARY.find((c) => c.id === id)).filter(Boolean);
+        cards.forEach((c) => {
+          state.planBlocks.push({
+            id: `pb-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            title: c.title,
+            startTime: c.defaultTime,
+            durationMins: c.durationMins,
+            category: 'night',
+            completed: false,
+            dayOffset: 0
+          });
+        });
+        saveState();
+        showToast(`Pushed ${cards.length} Night Watch cards to tonight’s 24h Watchtower!`);
+      },
+
+      // Bespoke Captain's Log Handlers
+      setJournalMode(modeId) {
+        state.selectedJournalMode = modeId;
+        renderApp();
+      },
+      updateBaylorTask(idx, val) {
+        state.baylorTasksDraft[idx] = val;
+      },
+      addBaylorTaskRow() {
+        state.baylorTasksDraft.push('');
+        renderApp();
+      },
+      pushBaylorTaskToWatch(idx) {
+        const txt = (state.baylorTasksDraft[idx] || '').trim();
+        if (!txt) return showToast('Write a task in that row first.');
+        state.planBlocks.push({
+          id: `pb-${Date.now()}`,
+          title: `[Offload #${idx + 1}] ${txt}`,
+          startTime: idx === 0 ? '08:30' : '10:00',
+          durationMins: 30,
+          category: 'morning',
+          completed: false,
+          dayOffset: 1
+        });
+        saveState();
+        showToast(`Pushed "${txt}" to Tomorrow’s 24h Watchtower!`);
+      },
+      saveBaylorLog() {
+        const clean = (state.baylorTasksDraft || []).map((t) => t.trim()).filter(Boolean);
+        if (clean.length === 0) return;
+        state.journalEntries.unshift({
+          id: `je-${Date.now()}`,
+          date: new Date().toLocaleString(),
+          framework: 'Baylor 5-Min Cognitive Offload',
+          summaryText: clean.map((t, i) => `${i + 1}. ${t}`).join('\n')
+        });
+        state.baylorTasksDraft = ['', '', ''];
+        ensureDailyLog(getLocalIsoDate(0)).nightDone = true;
+        saveState();
+        renderApp();
+        showToast('Saved Baylor Cognitive Offload & marked Night Watch complete!');
+      },
+      updateExamenStep(key, val) {
+        state.examenDraft[key] = val;
+      },
+      saveExamenLog() {
+        const d = state.examenDraft;
+        const text = [
+          d.s1 && `1. Gratitude: ${d.s1}`,
+          d.s2 && `2. Light: ${d.s2}`,
+          d.s3 && `3. Review: ${d.s3}`,
+          d.s4 && `4. Forgiveness: ${d.s4}`,
+          d.s5 && `5. Tomorrow’s Grace: ${d.s5}`
+        ]
+          .filter(Boolean)
+          .join('\n');
+        if (!text) return;
+        state.journalEntries.unshift({
+          id: `je-${Date.now()}`,
+          date: new Date().toLocaleString(),
+          framework: '5-Step Biblical Examen',
+          summaryText: text
+        });
+        state.examenDraft = { s1: '', s2: '', s3: '', s4: '', s5: '' };
+        ensureDailyLog(getLocalIsoDate(0)).nightDone = true;
+        saveState();
+        renderApp();
+        showToast('Saved 5-Step Biblical Examen & marked Night Watch complete!');
+      },
+      updatePennebaker(key, val) {
+        state.pennebakerDraft[key] = val;
+        if (key === 'intensity') renderApp();
+      },
+      savePennebakerLog() {
+        const d = state.pennebakerDraft;
+        if (!d.raw.trim() && !d.reframe.trim()) return;
+        state.journalEntries.unshift({
+          id: `je-${Date.now()}`,
+          date: new Date().toLocaleString(),
+          framework: `Pennebaker Unpacking (Tension ${d.intensity}/10)`,
+          summaryText: `Unpacked: ${d.raw}\nReframe: ${d.reframe}`
+        });
+        state.pennebakerDraft = { raw: '', reframe: '', intensity: 5 };
+        ensureDailyLog(getLocalIsoDate(0)).nightDone = true;
+        saveState();
+        renderApp();
+        showToast('Saved Pennebaker Unpacking & marked Night Watch complete!');
+      },
+      updateNarrative(key, val) {
+        state.narrativeDraft[key] = val;
+      },
+      saveNarrativeLog() {
+        const d = state.narrativeDraft;
+        if (!d.story.trim()) return;
+        state.journalEntries.unshift({
+          id: `je-${Date.now()}`,
+          date: new Date().toLocaleString(),
+          framework: 'Story-Based Narrative Gratitude',
+          summaryText: `Scene: ${d.scene}\nStory: ${d.story}\nTakeaway: ${d.meaning}`
+        });
+        state.narrativeDraft = { scene: '', story: '', meaning: '' };
+        ensureDailyLog(getLocalIsoDate(0)).nightDone = true;
+        saveState();
+        renderApp();
+        showToast('Saved Gratitude Story & marked Night Watch complete!');
+      },
+      update321(key, val) {
+        state.closure321Draft[key] = val;
+      },
+      save321Log() {
+        const d = state.closure321Draft;
+        const text = `Wins: ${[d.w1, d.w2, d.w3].filter(Boolean).join(' • ')}\nLessons: ${[d.l1, d.l2].filter(Boolean).join(' • ')}\nTomorrow’s #1: ${d.p1}`;
+        state.journalEntries.unshift({
+          id: `je-${Date.now()}`,
+          date: new Date().toLocaleString(),
+          framework: '3-2-1 Evening Closure',
+          summaryText: text
+        });
+        state.closure321Draft = { w1: '', w2: '', w3: '', l1: '', l2: '', p1: '' };
+        ensureDailyLog(getLocalIsoDate(0)).nightDone = true;
+        saveState();
+        renderApp();
+        showToast('Saved 3-2-1 Closure & marked Night Watch complete!');
+      },
+      updatePsalm4(key, val) {
+        state.psalm4Draft[key] = val;
+      },
+      savePsalm4Log() {
+        const d = state.psalm4Draft;
+        if (!d.burdens.trim() && !d.prayer.trim()) return;
+        state.journalEntries.unshift({
+          id: `je-${Date.now()}`,
+          date: new Date().toLocaleString(),
+          framework: 'Psalm 4:8 Night Watch Surrender',
+          summaryText: `Released: ${d.burdens}\nPrayer: ${d.prayer}`
+        });
+        state.psalm4Draft = { burdens: '', prayer: '' };
+        ensureDailyLog(getLocalIsoDate(0)).nightDone = true;
+        saveState();
+        renderApp();
+        showToast('Entrusted tonight’s watch to the Lord & marked Night Watch complete.');
+      },
+
+      // Prayer Sanctuary Handlers
+      setPrayerSubTab(sub) {
+        state.prayerSubTab = sub;
+        renderApp();
+      },
+      handlePrayerCategoryChange(selectId, customInputId) {
+        const sel = document.getElementById(selectId);
+        const inp = document.getElementById(customInputId);
+        if (!sel || !inp) return;
+        if (sel.value === 'Custom Category...') {
+          inp.classList.remove('hidden');
+          inp.focus();
+        } else {
+          inp.classList.add('hidden');
+        }
+      },
+      resolvePrayerCategoryValue(selectId, customInputId) {
+        const selVal = document.getElementById(selectId)?.value || 'Other / General';
+        if (selVal === 'Custom Category...') {
+          const customVal = (document.getElementById(customInputId)?.value || '').trim();
+          return customVal || 'Other / General';
+        }
+        return selVal;
+      },
+      quickAddPrayerCard() {
+        const titleEl = document.getElementById('quick-pray-title');
+        const title = (titleEl?.value || '').trim();
+        if (!title) return showToast('Type a prayer request or name first.');
+        const category = this.resolvePrayerCategoryValue('quick-pray-cat', 'quick-pray-custom-cat');
+        const scriptureTag = (document.getElementById('quick-pray-ref')?.value || '').trim() || 'Philippians 4:6-7';
+        const notes = (document.getElementById('quick-pray-notes')?.value || '').trim() || 'Lifted up in prayer watch.';
+        const pinToBoard = document.getElementById('quick-pray-pin')?.checked !== false;
+
+        state.prayerCards.unshift({
+          id: `pc-${Date.now()}`,
+          title,
+          category,
+          scriptureTag,
+          notes,
+          prayedCount: 0,
+          lastPrayed: 'Added Today',
+          onActiveBoard: pinToBoard,
+          isAnswered: false
+        });
+        saveState();
+        renderApp();
+        showToast(pinToBoard ? `Pinned "${title}" (${category}) to your Prayer Board!` : `Added "${title}" to your Intercession Deck!`);
+      },
+      prayForCard(cardId) {
+        state.prayerCards = state.prayerCards.map((c) =>
+          c.id === cardId ? { ...c, prayedCount: (c.prayedCount || 0) + 1, lastPrayed: 'Today' } : c
+        );
+        ensureDailyLog(getLocalIsoDate(0)).prayerDone = true;
+        saveState();
+        renderApp();
+        showToast('Amen — logged intercession & marked today’s Prayer Watch complete!');
+      },
+      togglePrayerBoardPin(cardId) {
+        state.prayerCards = state.prayerCards.map((c) =>
+          c.id === cardId ? { ...c, onActiveBoard: !c.onActiveBoard } : c
+        );
+        saveState();
+        renderApp();
+      },
+      markPrayerAnswered(cardId) {
+        state.prayerCards = state.prayerCards.map((c) =>
+          c.id === cardId ? { ...c, isAnswered: true, onActiveBoard: false } : c
+        );
+        saveState();
+        renderApp();
+        showToast('Moved to Answered Ebenezer Vault!');
+      },
+      addJesusThemeToBoard(themeId) {
+        const t = JESUS_PRAYER_THEMES.find((i) => i.id === themeId);
+        if (!t) return;
+        state.prayerCards.unshift({
+          id: `pc-${Date.now()}`,
+          title: t.theme,
+          category: t.category,
+          scriptureTag: t.reference,
+          notes: t.samplePrayer,
+          prayedCount: 0,
+          lastPrayed: 'Jesus’s Teaching',
+          onActiveBoard: true,
+          isAnswered: false
+        });
+        saveState();
+        renderApp();
+        showToast(`Pinned "${t.theme}" to your Active Prayer Board!`);
+      },
+      pushPrayerBlockToWatch() {
+        state.planBlocks.push({
+          id: `pb-${Date.now()}`,
+          title: 'Sanctuary Active Prayer Watch',
+          startTime: '07:05',
+          durationMins: 15,
+          category: 'prayer',
+          completed: false,
+          dayOffset: 0
+        });
+        saveState();
+        showToast('Scheduled Prayer Watch on 24h Watchtower!');
+      },
+      stepGuidedPrayer(delta) {
+        const next = state.guidedStepIndex + delta;
+        if (next >= 4) {
+          state.guidedStepIndex = 0;
+          showToast('Amen • Completed Guided P.R.A.Y. Sanctuary!');
+        } else {
+          state.guidedStepIndex = Math.max(0, next);
+        }
+        renderApp();
+      }
+    };
+
+    initLighthousePage({
+      page: 'sanctuary.html',
+      defaultTab: 'morning',
+      renderers: {
+        morning: renderMorningView,
+        night: renderNightView,
+        prayer: renderPrayerView
+      },
+      actions: pageActions
+    });
+  </script>
+</body>
+</html>
