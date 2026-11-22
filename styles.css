@@ -1,0 +1,268 @@
+/* ==========================================================================
+   LIGHTHOUSE — COLOR THEORY & GRAPHIC DESIGN SYSTEM (60-30-10 Proportion Rule)
+   60% Primary Canvas (--bg-canvas)
+   30% Elevated Surface & Structure (--bg-surface, --bg-elevated, --border-subtle)
+   10% Intentional Focal Accent (--accent-primary, --accent-soft)
+   ========================================================================== */
+:root, [data-theme="nordic"] {
+  --bg-canvas: #0b111e;
+  --bg-surface: #121b2d;
+  --bg-elevated: #19253d;
+  --bg-glass: rgba(18, 27, 45, 0.88);
+  --border-subtle: #23324d;
+  --border-focus: #d99b43;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --accent-primary: #e09f3e;
+  --accent-contrast: #0b111e;
+  --accent-soft: rgba(224, 159, 62, 0.14);
+  --accent-border: rgba(224, 159, 62, 0.32);
+  --secondary-accent: #4ea8de;
+  --secondary-soft: rgba(78, 168, 222, 0.13);
+  --success-accent: #52b788;
+  --success-soft: rgba(82, 183, 136, 0.14);
+}
+
+[data-theme="daylight"] {
+  --bg-canvas: #f6f4f0;
+  --bg-surface: #ffffff;
+  --bg-elevated: #edeae4;
+  --bg-glass: rgba(255, 255, 255, 0.92);
+  --border-subtle: #dfd9ce;
+  --border-focus: #1d4e89;
+  --text-primary: #14213d;
+  --text-secondary: #4a5568;
+  --text-muted: #718096;
+  --accent-primary: #1d4e89;
+  --accent-contrast: #ffffff;
+  --accent-soft: rgba(29, 78, 137, 0.10);
+  --accent-border: rgba(29, 78, 137, 0.25);
+  --secondary-accent: #b5651d;
+  --secondary-soft: rgba(181, 101, 29, 0.10);
+  --success-accent: #2b7a57;
+  --success-soft: rgba(43, 122, 87, 0.12);
+}
+
+[data-theme="deepsea"] {
+  --bg-canvas: #071318;
+  --bg-surface: #0d1f27;
+  --bg-elevated: #142c37;
+  --bg-glass: rgba(13, 31, 39, 0.90);
+  --border-subtle: #1e3d4b;
+  --border-focus: #56cfe1;
+  --text-primary: #e6f4f7;
+  --text-secondary: #8ab4c1;
+  --text-muted: #567d89;
+  --accent-primary: #48bfe3;
+  --accent-contrast: #071318;
+  --accent-soft: rgba(72, 191, 227, 0.14);
+  --accent-border: rgba(72, 191, 227, 0.30);
+  --secondary-accent: #f4a261;
+  --secondary-soft: rgba(244, 162, 97, 0.13);
+  --success-accent: #64dfdf;
+  --success-soft: rgba(100, 223, 223, 0.14);
+}
+
+[data-theme="olive"] {
+  --bg-canvas: #141613;
+  --bg-surface: #1d201b;
+  --bg-elevated: #272b24;
+  --bg-glass: rgba(29, 32, 27, 0.90);
+  --border-subtle: #32372e;
+  --border-focus: #a3b18a;
+  --text-primary: #edede9;
+  --text-secondary: #a9b2a1;
+  --text-muted: #737b6d;
+  --accent-primary: #a3b18a;
+  --accent-contrast: #141613;
+  --accent-soft: rgba(163, 177, 138, 0.15);
+  --accent-border: rgba(163, 177, 138, 0.32);
+  --secondary-accent: #d4a373;
+  --secondary-soft: rgba(212, 163, 115, 0.14);
+  --success-accent: #84a98c;
+  --success-soft: rgba(132, 169, 140, 0.15);
+}
+
+body {
+  background-color: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  line-height: 1.5;
+}
+
+.font-serif-editorial {
+  font-family: 'Instrument Serif', Georgia, serif;
+}
+
+.font-mono-code {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Theme-aware semantic classes */
+.lh-canvas { background-color: var(--bg-canvas); color: var(--text-primary); }
+.lh-surface { background-color: var(--bg-surface); border: 1px solid var(--border-subtle); }
+.lh-elevated { background-color: var(--bg-elevated); border: 1px solid var(--border-subtle); }
+.lh-glass { background-color: var(--bg-glass); backdrop-filter: blur(14px); }
+.lh-border { border-color: var(--border-subtle); }
+.lh-text-main { color: var(--text-primary); }
+.lh-text-sec { color: var(--text-secondary); }
+.lh-text-muted { color: var(--text-muted); }
+
+.lh-btn-primary {
+  background-color: var(--accent-primary);
+  color: var(--accent-contrast);
+  font-weight: 600;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+}
+.lh-btn-primary:hover { opacity: 0.92; }
+.lh-btn-primary:active { transform: scale(0.98); }
+
+.lh-btn-soft {
+  background-color: var(--accent-soft);
+  color: var(--accent-primary);
+  border: 1px solid var(--accent-border);
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+.lh-btn-soft:hover { opacity: 0.88; }
+
+.lh-badge {
+  background-color: var(--accent-soft);
+  color: var(--accent-primary);
+  border: 1px solid var(--accent-border);
+}
+.lh-badge-sec {
+  background-color: var(--secondary-soft);
+  color: var(--secondary-accent);
+}
+.lh-badge-success {
+  background-color: var(--success-soft);
+  color: var(--success-accent);
+}
+
+.lh-input {
+  background-color: var(--bg-canvas);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  font-size: 16px !important;
+}
+.lh-input:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}
+@media (min-width: 640px) {
+  .lh-input { font-size: 0.875rem !important; }
+}
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ==========================================================================
+   PRINT & 3-HOLE BINDER ANALOG WORKSHEET STYLES (US LETTER 8.5" x 11")
+   ========================================================================== */
+.binder-paper-sheet {
+  background: #ffffff;
+  color: #0f172a;
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  width: 100%;
+  max-width: 816px; /* 8.5in at 96dpi */
+  min-height: 1056px; /* 11in at 96dpi */
+  margin: 0 auto;
+  box-sizing: border-box;
+  position: relative;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+  border-radius: 6px;
+}
+
+.binder-page-break {
+  page-break-before: always;
+  break-before: page;
+}
+
+.avoid-break {
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+.hole-punch-rail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0.75in;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25in 0;
+  pointer-events: none;
+}
+
+.hole-punch-left {
+  left: 0;
+  border-right: 1px dashed #cbd5e1;
+}
+
+.hole-punch-right {
+  right: 0;
+  border-left: 1px dashed #cbd5e1;
+}
+
+.hole-punch-circle {
+  width: 0.31in;
+  height: 0.31in;
+  border-radius: 9999px;
+  border: 1.5px dashed #94a3b8;
+  background: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 7px;
+  color: #94a3b8;
+}
+
+.print-line-ruled {
+  height: var(--print-line-height, 24px);
+  border-bottom: 1px solid #94a3b8;
+}
+
+.print-line-dotted {
+  height: var(--print-line-height, 24px);
+  border-bottom: 1px dashed #64748b;
+}
+
+.print-box-grid {
+  background-image: radial-gradient(#64748b 0.85px, transparent 0.85px);
+  background-size: 16px 16px;
+  border: 1px solid #94a3b8;
+  border-radius: 4px;
+}
+
+#print-mount {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: letter portrait;
+    margin: 0.25in;
+  }
+  body > *:not(#print-mount) {
+    display: none !important;
+  }
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  #print-mount {
+    display: block !important;
+    width: 100% !important;
+  }
+  .binder-paper-sheet {
+    box-shadow: none !important;
+    max-width: 100% !important;
+    min-height: auto !important;
+    border-radius: 0 !important;
+  }
+}
