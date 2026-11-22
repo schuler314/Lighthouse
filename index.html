@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>Lighthouse — Watchtower, Workouts &amp; Lists</title>
+  <title>Lighthouse — Watchtower, Workouts &amp; Harbor Wall Pro</title>
 
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -21,10 +21,31 @@
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body class="min-h-screen flex flex-col md:flex-row">
+
+  <!-- HARBOR WALL PRO TASK EDITOR & CALENDAR SCHEDULER MODAL -->
+  <div id="task-pro-modal" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm hidden items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="lh-surface rounded-t-3xl sm:rounded-2xl p-5 sm:p-6 max-w-xl w-full max-h-[92vh] overflow-y-auto space-y-4 shadow-2xl">
+      <div class="flex items-start justify-between gap-3 pb-3 border-b lh-border">
+        <div>
+          <span class="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full lh-badge">Harbor Wall Pro • Task &amp; Schedule</span>
+          <h3 id="task-modal-heading" class="text-base sm:text-lg font-bold lh-text-main mt-1.5">Edit &amp; Schedule Task</h3>
+        </div>
+        <button onclick="window.Lighthouse.closeTaskProModal()" class="p-2 rounded-xl lh-elevated lh-text-sec hover:lh-text-main">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+      <div id="task-pro-modal-body" class="space-y-4"></div>
+    </div>
+  </div>
+
   <script type="module">
     import {
       WORKOUT_MODALITIES,
+      TASK_PRIORITIES,
+      TASK_RECURRENCE_OPTIONS,
       getLocalIsoDate,
+      addDaysToIsoDate,
+      getNextRecurrenceDate,
       getDayOffsetFromIsoDate,
       formatShortDate,
       formatFullDate
@@ -37,9 +58,24 @@
       escapeHtml,
       isEventMuted,
       getEventDayOffset,
+      getGcalSessionStatus,
       ensureDailyLog,
       initLighthousePage
     } from './core.js';
+
+    // =========================================================================
+    // LOCAL MODULE STATE FOR PRO TASK MODAL & FOCUS TIMER
+    // =========================================================================
+    let activeTaskModalRef = null; // { boardId, itemId }
+    const focusTimer = {
+      boardId: null,
+      itemId: null,
+      title: '',
+      totalSec: 1500,
+      remainingSec: 1500,
+      running: false,
+      intervalId: null
+    };
 
     function formatIsoToShortLabel(dateStr) {
       if (!dateStr) return '';
@@ -52,24 +88,227 @@
       });
     }
 
+    function formatClockMMSS(sec) {
+      const s = Math.max(0, Math.floor(sec));
+      const m = Math.floor(s / 60);
+      const r = s % 60;
+      return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
+    }
+
+    function findListItem(boardId, itemId) {
+      const board = (state.lists || []).find((b) => b.id === boardId);
+      if (!board) return { board: null, item: null };
+      const item = (board.items || []).find((it) => it.id === itemId) || null;
+      return { board, item };
+    }
+
+    // Build a pre-filled Google Calendar event template URL for 1-click export
+    function buildGoogleCalendarEventUrl(item, boardTitle = '') {
+      const dateStr = item.scheduledDate || item.dueDate || getLocalIsoDate(0);
+      const timeStr = item.scheduledTime || '09:00';
+      const duration = Math.max(15, Number(item.durationMins) || 30);
+      const [y, m, d] = dateStr.split('-').map(Number);
+      const [hh, mm] = timeStr.split(':').map(Number);
+      const startDt = new Date(y, m - 1, d, hh || 9, mm || 0, 0);
+      const endDt = new Date(startDt.getTime() + duration * 60000);
+      const fmt = (dt) =>
+        `${dt.getFullYear()}${String(dt.getMonth() + 1).padStart(2, '0')}${String(dt.getDate()).padStart(2, '0')}T${String(dt.getHours()).padStart(2, '0')}${String(dt.getMinutes()).padStart(2, '0')}00`;
+
+      const detailsParts = [];
+      if (boardTitle) detailsParts.push(`Harbor Wall Board: ${boardTitle}`);
+      if (item.notes) detailsParts.push(item.notes);
+      if (item.subtasks?.length) {
+        detailsParts.push(
+          'Checklist:\n' + item.subtasks.map((s) => `${s.completed ? '[x]' : '[ ]'} ${s.text}`).join('\n')
+        );
+      }
+
+      const params = new URLSearchParams({
+        action: 'TEMPLATE',
+        text: item.text || 'Lighthouse Task',
+        dates: `${fmt(startDt)}/${fmt(endDt)}`,
+        details: detailsParts.join('\n\n')
+      });
+      return `https://calendar.google.com/calendar/render?${params.toString()}`;
+    }
+
+    // Natural-Language Quick Task Parser
+    // Example: "Call Shannon tomorrow 2:30pm 30m !p1 #errands @Dan"
+    function parseNaturalTaskInput(rawInput) {
+      let text = String(rawInput || '').trim();
+      let priority = 'p3';
+      let dueDate = '';
+      let scheduledDate = '';
+      let scheduledTime = '15:00';
+      let durationMins = 30;
+      let assignedTo = 'Dan';
+      let recurrence = 'none';
+      let hasExplicitTime = false;
+      const tags = [];
+
+      // Priority: !p1..p4 or p1..p4
+      text = text.replace(/(?:^|\s)!?p([1-4])\b/gi, (_, num) => {
+        priority = `p${num}`;
+        return ' ';
+      });
+
+      // Tags: #word
+      text = text.replace(/#([a-z0-9_-]+)/gi, (_, tag) => {
+        tags.push(tag.toLowerCase());
+        return ' ';
+      });
+
+      // Assignee: @Name
+      text = text.replace(/@([a-z]+)/gi, (_, who) => {
+        assignedTo = who.charAt(0).toUpperCase() + who.slice(1).toLowerCase();
+        return ' ';
+      });
+
+      // Recurrence shortcuts: "every day", "daily", "weekly", "weekdays", "monthly"
+      if (/\b(every\s+day|daily)\b/i.test(text)) {
+        recurrence = 'daily';
+        text = text.replace(/\b(every\s+day|daily)\b/gi, ' ');
+      } else if (/\b(weekdays|every\s+weekday)\b/i.test(text)) {
+        recurrence = 'weekdays';
+        text = text.replace(/\b(weekdays|every\s+weekday)\b/gi, ' ');
+      } else if (/\b(every\s+week|weekly)\b/i.test(text)) {
+        recurrence = 'weekly';
+        text = text.replace(/\b(every\s+week|weekly)\b/gi, ' ');
+      } else if (/\b(every\s+month|monthly)\b/i.test(text)) {
+        recurrence = 'monthly';
+        text = text.replace(/\b(every\s+month|monthly)\b/gi, ' ');
+      }
+
+      // Duration: 30m, 45min, 1h, 2hrs
+      text = text.replace(/\b(\d+)\s?(mins?|m|hrs?|h)\b/gi, (_, qty, unit) => {
+        const n = Number(qty);
+        durationMins = unit.toLowerCase().startsWith('h') ? n * 60 : n;
+        return ' ';
+      });
+
+      // Explicit time: 2pm, 2:30pm, 9am, 14:30
+      text = text.replace(/\b(\d{1,2})(?::(\d{2}))?\s?(am|pm)\b/i, (_, hStr, mStr, mer) => {
+        let h = Number(hStr);
+        const m = Number(mStr || 0);
+        if (mer.toLowerCase() === 'pm' && h < 12) h += 12;
+        if (mer.toLowerCase() === 'am' && h === 12) h = 0;
+        scheduledTime = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+        hasExplicitTime = true;
+        return ' ';
+      });
+      if (!hasExplicitTime) {
+        text = text.replace(/\b([01]?\d|2[0-3]):([0-5]\d)\b/, (_, hStr, mStr) => {
+          scheduledTime = `${String(Number(hStr)).padStart(2, '0')}:${mStr}`;
+          hasExplicitTime = true;
+          return ' ';
+        });
+      }
+
+      // Date keywords: ISO date, today, tomorrow, next weekday
+      const isoMatch = text.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+      if (isoMatch) {
+        dueDate = isoMatch[1];
+        text = text.replace(isoMatch[0], ' ');
+      } else if (/\btoday\b/i.test(text)) {
+        dueDate = getLocalIsoDate(0);
+        text = text.replace(/\btoday\b/gi, ' ');
+      } else if (/\b(tomorrow|tmrw)\b/i.test(text)) {
+        dueDate = getLocalIsoDate(1);
+        text = text.replace(/\b(tomorrow|tmrw)\b/gi, ' ');
+      } else {
+        const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+        const wdMatch = text.match(/\b(sunday|sun|monday|mon|tuesday|tue|wednesday|wed|thursday|thu|friday|fri|saturday|sat)\b/i);
+        if (wdMatch) {
+          const targetIdx = dayNames.indexOf(wdMatch[1].slice(0, 3).toLowerCase());
+          const todayIdx = new Date().getDay();
+          let diff = (targetIdx - todayIdx + 7) % 7;
+          if (diff === 0) diff = 7;
+          dueDate = getLocalIsoDate(diff);
+          text = text.replace(wdMatch[0], ' ');
+        }
+      }
+
+      if (hasExplicitTime) {
+        scheduledDate = dueDate || getLocalIsoDate(0);
+        if (!dueDate) dueDate = scheduledDate;
+      }
+
+      return {
+        text: text.replace(/\s+/g, ' ').trim(),
+        priority,
+        dueDate,
+        scheduledDate,
+        scheduledTime,
+        durationMins,
+        assignedTo,
+        recurrence,
+        tags: Array.from(new Set(tags)),
+        autoSchedule: hasExplicitTime
+      };
+    }
+
+    // Sync a Harbor Wall list item onto the Watchtower Calendar (creates or updates linked block)
+    function upsertWatchBlockForTask(board, item, targetDate, targetTime, durationMins) {
+      const dateStr = targetDate || item.scheduledDate || item.dueDate || getLocalIsoDate(0);
+      const startTime = targetTime || item.scheduledTime || '15:00';
+      const dur = Math.max(5, Number(durationMins || item.durationMins) || 30);
+      const dayOffset = getDayOffsetFromIsoDate(dateStr);
+
+      item.scheduledDate = dateStr;
+      item.scheduledTime = startTime;
+      item.durationMins = dur;
+      if (!item.dueDate) item.dueDate = dateStr;
+
+      const existingIdx = (state.planBlocks || []).findIndex(
+        (b) =>
+          (item.watchBlockId && b.id === item.watchBlockId) ||
+          (b.sourceType === 'list' && b.sourceId === item.id)
+      );
+
+      const blockPayload = {
+        id: existingIdx >= 0 ? state.planBlocks[existingIdx].id : `pb-task-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+        title: `[${board.title}] ${item.text}`,
+        startTime,
+        durationMins: dur,
+        category: 'list',
+        sourceType: 'list',
+        sourceId: item.id,
+        sourceBoardId: board.id,
+        dateStr,
+        dayOffset: dayOffset !== null ? dayOffset : 0,
+        completed: Boolean(item.completed)
+      };
+
+      if (existingIdx >= 0) {
+        state.planBlocks[existingIdx] = blockPayload;
+      } else {
+        state.planBlocks.push(blockPayload);
+      }
+      item.watchBlockId = blockPayload.id;
+      return blockPayload;
+    }
+
     // =========================================================================
-    // STATION 1: WATCHTOWER (24H)
+    // STATION 1: WATCHTOWER (24H) — WITH PROMINENT GCAL SYNC & TWO-WAY REMOVAL
     // =========================================================================
     function renderWatchtowerView() {
       const todayIso = getLocalIsoDate(0);
       const selOffset = state.selectedDayOffset;
+      const gcalStatus = getGcalSessionStatus();
 
-      const planItems =
-        selOffset <= 1
-          ? (state.planBlocks || [])
-              .filter((b) => b.dayOffset === selOffset)
-              .map((b) => ({
-                ...b,
-                streamType: 'plan_block',
-                sortDate: getLocalIsoDate(selOffset),
-                sortTime: b.startTime || '08:00'
-              }))
-          : [];
+      const planItems = (state.planBlocks || [])
+        .map((b) => {
+          const computedOffset = b.dateStr ? getDayOffsetFromIsoDate(b.dateStr) : b.dayOffset;
+          return {
+            ...b,
+            computedOffset,
+            streamType: 'plan_block',
+            sortDate: b.dateStr || getLocalIsoDate(b.dayOffset || 0),
+            sortTime: b.startTime || '08:00'
+          };
+        })
+        .filter((b) => b.computedOffset !== null && b.computedOffset !== undefined)
+        .filter((b) => (selOffset === 2 ? b.computedOffset >= 2 : b.computedOffset === selOffset));
 
       const workoutItems = (state.workouts || [])
         .map((w) => ({ ...w, computedOffset: getDayOffsetFromIsoDate(w.date) }))
@@ -103,7 +342,7 @@
         (a, b) => (a.sortDate || '').localeCompare(b.sortDate || '') || a.sortTime.localeCompare(b.sortTime)
       );
 
-      const syncLabel = state.settings.lastGcalSync || 'Not synced yet';
+      const syncLabel = gcalStatus.lastSyncLabel;
       const isLiveSynced = syncLabel.startsWith('Live Sync') || syncLabel.startsWith('.ICS Import');
       const activeHeadingDate =
         selOffset === 0
@@ -112,24 +351,34 @@
           ? formatFullDate(1)
           : `${formatShortDate(2)} – ${formatShortDate(14)}`;
 
+      const sourceBadgeText = (item) => {
+        if (item.sourceType === 'morning') return 'Synced • Morning Board';
+        if (item.sourceType === 'night') return 'Synced • Night Board';
+        if (item.sourceType === 'prayer') return 'Synced • Prayer Board';
+        if (item.sourceType === 'list') return 'Synced • Harbor Wall';
+        return '';
+      };
+
+      const deleteTooltipText = (item) => {
+        if (item.sourceType === 'morning') return 'Remove from Watchtower AND Morning Board';
+        if (item.sourceType === 'night') return 'Remove from Watchtower AND Night Watch Board';
+        if (item.sourceType === 'prayer') return 'Remove from Watchtower AND unpin from Prayer Board';
+        if (item.sourceType === 'list') return 'Unschedule from Watchtower (keeps task in Harbor Wall)';
+        return 'Remove from Watchtower';
+      };
+
       return `
         <div class="space-y-5">
-          <!-- TOP HORIZON BAR -->
+          <!-- TOP HORIZON BAR + PROMINENT GOOGLE CALENDAR AUTO-SYNC STRIP -->
           <div class="lh-surface rounded-2xl p-4 sm:p-5 space-y-4">
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div class="flex items-center gap-2 flex-wrap">
-                  <span class="text-[11px] font-semibold uppercase tracking-wider lh-text-sec">
-                    ${escapeHtml(activeHeadingDate)}
-                  </span>
-                  <button onclick="window.Lighthouse.openGcalModal()"
-                    class="text-[10px] font-mono-code px-2 py-0.5 rounded-full ${isLiveSynced ? 'lh-badge-success' : 'lh-badge-sec'} hover:opacity-85">
-                    GCal: ${escapeHtml(syncLabel)}
-                  </button>
-                </div>
-                <h3 class="text-lg sm:text-xl font-bold lh-text-main mt-1">Clear the Fog • Lock Your Next 24 Hours</h3>
+                <span class="text-[11px] font-semibold uppercase tracking-wider lh-text-sec">
+                  ${escapeHtml(activeHeadingDate)}
+                </span>
+                <h3 class="text-lg sm:text-xl font-bold lh-text-main mt-0.5">Clear the Fog • Lock Your Next 24 Hours</h3>
               </div>
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 flex-wrap">
                 <button onclick="window.Lighthouse.togglePeekMuted()"
                   class="px-3 py-1.5 rounded-xl lh-elevated text-xs font-medium lh-text-sec hover:lh-text-main flex items-center gap-1.5">
                   <i data-lucide="${state.peekFilteredEvents ? 'eye-off' : 'eye'}" class="w-3.5 h-3.5"></i>
@@ -141,6 +390,50 @@
                   }">
                   <i data-lucide="${state.planLocked ? 'lock' : 'unlock'}" class="w-3.5 h-3.5"></i>
                   <span>${state.planLocked ? 'Watch Locked' : 'Lock 24h Watch'}</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- PROMINENT ONE-TAP GOOGLE CALENDAR SYNC BAR -->
+            <div class="p-3 rounded-xl lh-elevated flex flex-wrap items-center justify-between gap-3 border-l-4"
+              style="border-left-color: ${gcalStatus.hasToken ? 'var(--success-accent)' : 'var(--secondary-accent)'};">
+              <div class="flex items-center gap-2.5 min-w-0">
+                <div class="p-2 rounded-xl ${gcalStatus.hasToken ? 'lh-badge-success' : 'lh-badge-sec'} shrink-0">
+                  <i data-lucide="calendar" class="w-4 h-4"></i>
+                </div>
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="text-xs font-bold lh-text-main">
+                      ${
+                        gcalStatus.syncing
+                          ? 'Syncing Google Calendars...'
+                          : gcalStatus.hasToken
+                          ? `Google Calendar Auto-Sync Active (${gcalStatus.expiresInMins}m session left)`
+                          : 'Google Calendar Sync'
+                      }
+                    </span>
+                    <span class="text-[10px] font-mono-code px-2 py-0.5 rounded-full lh-surface lh-text-sec">
+                      ${escapeHtml(syncLabel)}
+                    </span>
+                  </div>
+                  <p class="text-[11px] lh-text-sec truncate">
+                    ${
+                      gcalStatus.hasToken && gcalStatus.autoEnabled
+                        ? `Auto-refreshes every ${gcalStatus.intervalMins} mins & on tab return across all Lighthouse pages.`
+                        : 'Tap Sync Now to sign in once and enable automatic background updates for the next hour.'
+                    }
+                  </p>
+                </div>
+              </div>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <button onclick="window.Lighthouse.syncGcalQuick()"
+                  class="px-3.5 py-2 rounded-xl lh-btn-primary text-xs font-bold flex items-center gap-1.5 shadow-sm">
+                  <i data-lucide="refresh-cw" class="w-3.5 h-3.5 ${gcalStatus.syncing ? 'animate-spin' : ''}"></i>
+                  <span>${gcalStatus.syncing ? 'Syncing...' : gcalStatus.hasToken ? 'Refresh Now' : 'Sync Google Calendar'}</span>
+                </button>
+                <button onclick="window.Lighthouse.openGcalModal()"
+                  class="p-2 rounded-xl lh-surface lh-text-sec hover:lh-text-main" title="GCal Auto-Sync Settings & .ICS Import">
+                  <i data-lucide="settings-2" class="w-4 h-4"></i>
                 </button>
               </div>
             </div>
@@ -170,38 +463,34 @@
             <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b lh-border">
               <div>
                 <h4 class="font-bold text-sm sm:text-base lh-text-main">Chronological Watch Stream (${unified.length})</h4>
-                <p class="text-xs lh-text-sec">Live Google Calendar anchors interleaved with your scheduled workouts, routines &amp; tasks</p>
+                <p class="text-xs lh-text-sec">Live Google Calendar anchors interleaved with workouts, routines &amp; scheduled Harbor Wall tasks</p>
               </div>
               <div class="flex flex-wrap gap-1.5">
                 <button onclick="window.Lighthouse.openPdfBuilder()" class="px-2.5 py-1 rounded-lg lh-btn-soft text-xs font-semibold flex items-center gap-1">
-                  <i data-lucide="printer" class="w-3.5 h-3.5"></i> Print Tonight’s Plan &amp; Log
+                  <i data-lucide="printer" class="w-3.5 h-3.5"></i> Print Night Log
                 </button>
                 <button onclick="window.Lighthouse.setTab('workouts')" class="px-2.5 py-1 rounded-lg lh-btn-primary text-xs font-semibold flex items-center gap-1">
-                  <i data-lucide="dumbbell" class="w-3.5 h-3.5"></i> + Schedule Workout
+                  <i data-lucide="dumbbell" class="w-3.5 h-3.5"></i> + Workout
                 </button>
-                <button onclick="window.Lighthouse.setTab('morning')" class="px-2.5 py-1 rounded-lg lh-elevated text-xs font-medium lh-text-sec hover:lh-text-main">+ Morning Ramp</button>
-                <button onclick="window.Lighthouse.setTab('night')" class="px-2.5 py-1 rounded-lg lh-elevated text-xs font-medium lh-text-sec hover:lh-text-main">+ Night Watch</button>
-                <button onclick="window.Lighthouse.setTab('prayer')" class="px-2.5 py-1 rounded-lg lh-elevated text-xs font-medium lh-text-sec hover:lh-text-main">+ Prayer</button>
+                <button onclick="window.Lighthouse.setTab('lists')" class="px-2.5 py-1 rounded-lg lh-elevated text-xs font-medium lh-text-sec hover:lh-text-main">+ Schedule Task</button>
+                <button onclick="window.Lighthouse.setTab('morning')" class="px-2.5 py-1 rounded-lg lh-elevated text-xs font-medium lh-text-sec hover:lh-text-main">+ Morning</button>
+                <button onclick="window.Lighthouse.setTab('night')" class="px-2.5 py-1 rounded-lg lh-elevated text-xs font-medium lh-text-sec hover:lh-text-main">+ Night</button>
               </div>
             </div>
 
-            <!-- LIVE CALENDAR STATUS BANNER WHEN NO GCAL EVENTS ARE IN THIS VIEW -->
             ${
               calItems.length === 0
                 ? `<div class="p-3 rounded-xl lh-elevated flex flex-wrap items-center justify-between gap-2 text-xs">
                     <div class="flex items-center gap-2 lh-text-sec">
-                      <i data-lucide="calendar" class="w-4 h-4 shrink-0" style="color: var(--secondary-accent);"></i>
+                      <i data-lucide="calendar-check" class="w-4 h-4 shrink-0" style="color: var(--secondary-accent);"></i>
                       <span>
                         ${
                           isLiveSynced
                             ? `No Google Calendar events on the books for ${selOffset === 0 ? formatShortDate(0) : selOffset === 1 ? formatShortDate(1) : 'the next 2 weeks'}.`
-                            : 'Google Calendar is not synced yet — connect GCal to pull your real schedule.'
+                            : 'No synced Google Calendar events yet — press "Sync Google Calendar" above to load your real schedule.'
                         }
                       </span>
                     </div>
-                    <button onclick="window.Lighthouse.openGcalModal()" class="px-2.5 py-1 rounded-lg lh-btn-soft text-[11px] font-semibold shrink-0">
-                      ${isLiveSynced ? 'Refresh GCal' : 'Sync GCal Now'}
-                    </button>
                   </div>`
                 : ''
             }
@@ -266,6 +555,7 @@
                           `;
                         }
 
+                        const linkedLabel = sourceBadgeText(item);
                         return `
                           <div class="p-3.5 rounded-xl lh-surface flex items-center justify-between gap-3 ${item.completed ? 'opacity-55' : ''}">
                             <div class="flex items-center gap-3 min-w-0">
@@ -275,17 +565,23 @@
                                 ${item.completed ? '<i data-lucide="check" class="w-4 h-4"></i>' : ''}
                               </button>
                               <div class="min-w-0">
-                                <div class="flex items-center gap-2">
+                                <div class="flex items-center gap-2 flex-wrap">
                                   <span class="font-mono-code text-xs font-semibold" style="color: var(--accent-primary);">${escapeHtml(item.startTime)}</span>
                                   <span class="text-xs lh-text-muted">${item.durationMins}m</span>
                                   <span class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full lh-badge font-semibold">${escapeHtml(item.category)}</span>
+                                  ${item.dateStr && selOffset === 2 ? `<span class="text-[10px] font-mono-code px-2 py-0.5 rounded lh-elevated lh-text-main">${escapeHtml(formatIsoToShortLabel(item.dateStr))}</span>` : ''}
+                                  ${linkedLabel ? `<span class="text-[10px] lh-text-muted hidden sm:inline">↔ ${escapeHtml(linkedLabel)}</span>` : ''}
                                 </div>
                                 <p class="text-sm font-medium lh-text-main mt-0.5 ${item.completed ? 'line-through lh-text-muted' : ''}">${escapeHtml(item.title)}</p>
                               </div>
                             </div>
                             ${
                               !state.planLocked
-                                ? `<button onclick="window.Lighthouse.deletePlanBlock('${item.id}')" class="p-1.5 rounded-lg lh-text-muted hover:lh-text-main"><i data-lucide="trash-2" class="w-4 h-4"></i></button>`
+                                ? `<button onclick="window.Lighthouse.deletePlanBlock('${item.id}')"
+                                    class="p-1.5 rounded-lg lh-text-muted hover:lh-text-main shrink-0"
+                                    title="${escapeHtml(deleteTooltipText(item))}">
+                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                  </button>`
                                 : ''
                             }
                           </div>
@@ -341,7 +637,6 @@
 
       return `
         <div class="space-y-6">
-          <!-- TOP TRAINING BANNER & STATS -->
           <div class="lh-surface rounded-2xl p-4 sm:p-6 flex flex-wrap items-center justify-between gap-4 border-l-4" style="border-left-color: var(--success-accent);">
             <div>
               <div class="flex items-center gap-2 flex-wrap">
@@ -364,7 +659,6 @@
             </button>
           </div>
 
-          <!-- SCHEDULE OR LOG WORKOUT FORM -->
           <div class="lh-surface rounded-2xl p-4 sm:p-6 space-y-4">
             <div class="flex items-center justify-between border-b lh-border pb-2.5">
               <h4 class="font-bold text-sm sm:text-base lh-text-main flex items-center gap-2">
@@ -448,7 +742,6 @@
             </div>
           </div>
 
-          <!-- FILTER BY MODALITY & WORKOUT SCHEDULE LIST -->
           <div class="space-y-3">
             <div class="flex items-center justify-between flex-wrap gap-2">
               <h4 class="text-sm font-bold lh-text-main">Scheduled &amp; Logged Workouts (${filteredWorkouts.length})</h4>
@@ -534,87 +827,592 @@
     }
 
     // =========================================================================
-    // STATION 3: HARBOR WALL LISTS (FAMILY WALL EXPERIENCE)
+    // STATION 3: HARBOR WALL PRO TASK MANAGER (LISTS + SCHEDULING + FOCUS)
     // =========================================================================
-    function renderListsView() {
-      return `
-        <div class="space-y-5">
-          <div class="lh-surface rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <span class="text-[11px] font-semibold uppercase tracking-wider lh-text-sec">Family Wall Experience</span>
-              <h3 class="text-lg sm:text-xl font-bold lh-text-main mt-0.5">Harbor Wall Shared Lists</h3>
-              <p class="text-xs lh-text-sec">Organize family, grocery, and workbench items—and push any item directly onto your 24h Watchtower.</p>
-            </div>
-            <div class="flex items-center gap-2">
-              <input id="new-board-title" type="text"
-                onkeydown="if(event.key==='Enter') window.Lighthouse.createListBoard()"
-                placeholder="New list board name..." class="px-3 py-2 rounded-xl lh-input" />
-              <button onclick="window.Lighthouse.createListBoard()" class="px-4 py-2.5 rounded-xl lh-btn-primary text-xs shrink-0">+ Board</button>
-            </div>
-          </div>
+    function filterAndSortBoardItems(items) {
+      const todayIso = getLocalIsoDate(0);
+      const filterMode = state.listFilterMode || 'all';
+      const hideDone = Boolean(state.listHideCompleted);
+      const q = (state.listSearchQuery || '').trim().toLowerCase();
+      const sortBy = state.listSortBy || 'priority';
 
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            ${(state.lists || [])
-              .map(
-                (board) => `
-                <div class="lh-surface rounded-2xl p-4 sm:p-5 flex flex-col justify-between space-y-4">
-                  <div class="space-y-3">
-                    <div class="flex items-center justify-between pb-2.5 border-b lh-border">
-                      <div>
-                        <span class="text-[10px] font-semibold uppercase tracking-wider" style="color: var(--accent-primary);">${escapeHtml(board.category)}</span>
-                        <h4 class="font-bold text-base lh-text-main">${escapeHtml(board.title)}</h4>
-                      </div>
-                      <button onclick="window.Lighthouse.deleteListBoard('${board.id}')" class="p-1.5 lh-text-muted hover:lh-text-main">
+      const filtered = (items || []).filter((it) => {
+        if (hideDone && it.completed) return false;
+
+        if (q) {
+          const hay = [
+            it.text,
+            it.notes,
+            it.assignedTo,
+            ...(it.tags || []),
+            ...(it.subtasks || []).map((s) => s.text)
+          ]
+            .join(' ')
+            .toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+
+        if (filterMode === 'today') {
+          const d = it.scheduledDate || it.dueDate;
+          if (!d || d > todayIso) return false;
+        } else if (filterMode === 'high') {
+          if (it.priority !== 'p1' && it.priority !== 'p2') return false;
+        } else if (filterMode === 'scheduled') {
+          if (!it.scheduledDate && !it.watchBlockId) return false;
+        } else if (filterMode === 'recurring') {
+          if (!it.recurrence || it.recurrence === 'none') return false;
+        }
+        return true;
+      });
+
+      const sorted = [...filtered];
+      sorted.sort((a, b) => {
+        // Always sink completed tasks to the bottom
+        if (Boolean(a.completed) !== Boolean(b.completed)) return a.completed ? 1 : -1;
+
+        if (sortBy === 'priority') {
+          const ra = TASK_PRIORITIES[a.priority]?.rank || 3;
+          const rb = TASK_PRIORITIES[b.priority]?.rank || 3;
+          if (ra !== rb) return ra - rb;
+          return (a.dueDate || '9999-99-99').localeCompare(b.dueDate || '9999-99-99');
+        }
+        if (sortBy === 'dueDate') {
+          const da = a.scheduledDate || a.dueDate || '9999-99-99';
+          const db = b.scheduledDate || b.dueDate || '9999-99-99';
+          if (da !== db) return da.localeCompare(db);
+          const ra = TASK_PRIORITIES[a.priority]?.rank || 3;
+          const rb = TASK_PRIORITIES[b.priority]?.rank || 3;
+          return ra - rb;
+        }
+        return 0;
+      });
+      return sorted;
+    }
+
+    function renderHarborBoardsGridHtml() {
+      const todayIso = getLocalIsoDate(0);
+
+      return (state.lists || [])
+        .map((board) => {
+          const allItems = board.items || [];
+          const doneCount = allItems.filter((i) => i.completed).length;
+          const pct = allItems.length > 0 ? Math.round((doneCount / allItems.length) * 100) : 0;
+          const visibleItems = filterAndSortBoardItems(allItems);
+
+          return `
+            <div class="lh-surface rounded-2xl p-4 sm:p-5 flex flex-col justify-between space-y-4">
+              <div class="space-y-3">
+                <!-- BOARD HEADER + PROGRESS BAR -->
+                <div class="space-y-2 pb-2.5 border-b lh-border">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="min-w-0">
+                      <span class="text-[10px] font-semibold uppercase tracking-wider" style="color: var(--accent-primary);">${escapeHtml(board.category || 'Board')}</span>
+                      <h4 class="font-bold text-base lh-text-main truncate">${escapeHtml(board.title)}</h4>
+                    </div>
+                    <div class="flex items-center gap-1 shrink-0">
+                      ${
+                        doneCount > 0
+                          ? `<button onclick="window.Lighthouse.clearCompletedInBoard('${board.id}')"
+                              class="px-2 py-1 rounded-lg lh-elevated text-[10px] font-semibold lh-text-sec hover:lh-text-main" title="Clear completed tasks">
+                              Clear (${doneCount})
+                            </button>`
+                          : ''
+                      }
+                      <button onclick="window.Lighthouse.deleteListBoard('${board.id}')" class="p-1.5 lh-text-muted hover:lh-text-main" title="Delete Board">
                         <i data-lucide="trash-2" class="w-4 h-4"></i>
                       </button>
                     </div>
-
-                    <div class="space-y-2">
-                      ${(board.items || [])
-                        .map(
-                          (item) => `
-                          <div class="p-3 rounded-xl lh-elevated flex items-start justify-between gap-2 ${item.completed ? 'opacity-55' : ''}">
-                            <div class="flex items-start gap-2.5 min-w-0">
-                              <button onclick="window.Lighthouse.toggleListItem('${board.id}', '${item.id}')"
-                                class="mt-0.5 w-5 h-5 rounded-md border lh-border flex items-center justify-center shrink-0"
-                                style="${item.completed ? 'background-color: var(--success-accent); color: var(--accent-contrast);' : ''}">
-                                ${item.completed ? '<i data-lucide="check" class="w-3.5 h-3.5"></i>' : ''}
-                              </button>
-                              <div class="min-w-0">
-                                <p class="text-xs sm:text-sm font-medium lh-text-main ${item.completed ? 'line-through lh-text-muted' : ''}">${escapeHtml(item.text)}</p>
-                                <span class="text-[11px] lh-text-sec">${escapeHtml(item.assignedTo || 'Shared')}</span>
-                              </div>
-                            </div>
-                            <button onclick="window.Lighthouse.pushListItemToWatch('${board.id}', '${item.id}')"
-                              class="px-2 py-1 rounded-lg lh-btn-soft text-[10px] shrink-0">
-                              + 24h
-                            </button>
-                          </div>
-                        `
-                        )
-                        .join('')}
-                    </div>
                   </div>
-
-                  <div class="pt-3 border-t lh-border flex items-center gap-2">
-                    <input id="list-input-${board.id}" type="text"
-                      onkeydown="if(event.key==='Enter') window.Lighthouse.addListItem('${board.id}')"
-                      placeholder="Add item..." class="flex-1 px-3 py-2 rounded-xl lh-input" />
-                    <button onclick="window.Lighthouse.addListItem('${board.id}')" class="p-2.5 rounded-xl lh-btn-primary shrink-0">
-                      <i data-lucide="plus" class="w-4 h-4"></i>
-                    </button>
+                  <div class="flex items-center gap-2">
+                    <div class="flex-1 h-1.5 rounded-full lh-elevated overflow-hidden">
+                      <div class="h-full rounded-full transition-all duration-300" style="width: ${pct}%; background-color: var(--success-accent);"></div>
+                    </div>
+                    <span class="text-[10px] font-mono-code lh-text-sec shrink-0">${doneCount}/${allItems.length}</span>
                   </div>
                 </div>
-              `
-              )
-              .join('')}
+
+                <!-- TASK CARDS -->
+                <div class="space-y-2.5">
+                  ${
+                    visibleItems.length === 0
+                      ? `<p class="text-xs lh-text-muted py-4 text-center">No matching tasks on this board.</p>`
+                      : visibleItems
+                          .map((item) => {
+                            const pri = TASK_PRIORITIES[item.priority] || TASK_PRIORITIES.p3;
+                            const due = item.dueDate || '';
+                            const isOverdue = Boolean(!item.completed && due && due < todayIso);
+                            const isScheduled = Boolean(item.scheduledDate || item.watchBlockId);
+                            const subs = item.subtasks || [];
+                            const subsDone = subs.filter((s) => s.completed).length;
+
+                            return `
+                              <div class="p-3 rounded-xl lh-elevated space-y-2 border-l-4 transition ${item.completed ? 'opacity-55' : ''}"
+                                style="border-left-color: ${pri.color};">
+                                <div class="flex items-start justify-between gap-2">
+                                  <div class="flex items-start gap-2.5 min-w-0">
+                                    <button onclick="window.Lighthouse.toggleListItem('${board.id}', '${item.id}')"
+                                      class="mt-0.5 w-5 h-5 rounded-md border lh-border flex items-center justify-center shrink-0"
+                                      style="${item.completed ? 'background-color: var(--success-accent); color: var(--accent-contrast);' : ''}">
+                                      ${item.completed ? '<i data-lucide="check" class="w-3.5 h-3.5"></i>' : ''}
+                                    </button>
+                                    <div onclick="window.Lighthouse.openTaskProModal('${board.id}', '${item.id}')" class="cursor-pointer min-w-0">
+                                      <p class="text-xs sm:text-sm font-semibold lh-text-main leading-snug ${item.completed ? 'line-through lh-text-muted' : ''}">
+                                        ${escapeHtml(item.text)}
+                                      </p>
+                                      ${item.notes ? `<p class="text-[11px] lh-text-sec line-clamp-1 mt-0.5">${escapeHtml(item.notes)}</p>` : ''}
+                                    </div>
+                                  </div>
+
+                                  <div class="flex items-center gap-1 shrink-0">
+                                    <button onclick="window.Lighthouse.startFocusTimer('${board.id}', '${item.id}')"
+                                      class="p-1.5 rounded-lg lh-surface lh-text-sec hover:lh-text-main" title="Start Focus Timer (${item.durationMins || 30}m)">
+                                      <i data-lucide="play" class="w-3 h-3"></i>
+                                    </button>
+                                    <button onclick="window.Lighthouse.openTaskProModal('${board.id}', '${item.id}')"
+                                      class="p-1.5 rounded-lg lh-surface lh-text-sec hover:lh-text-main" title="Edit, Subtasks & Schedule">
+                                      <i data-lucide="sliders-horizontal" class="w-3 h-3"></i>
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <!-- PRO METADATA CHIPS -->
+                                <div class="flex flex-wrap items-center gap-1.5 text-[10px]">
+                                  <span class="px-1.5 py-0.5 rounded font-bold font-mono-code"
+                                    style="background-color: ${pri.softBg}; color: ${pri.color};">
+                                    ${pri.short}
+                                  </span>
+
+                                  ${
+                                    due
+                                      ? `<span class="px-1.5 py-0.5 rounded font-mono-code ${
+                                          isOverdue ? 'bg-rose-500/20 text-rose-300 font-bold' : 'lh-surface lh-text-sec'
+                                        }">
+                                          ${isOverdue ? '⚠ ' : ''}${escapeHtml(formatIsoToShortLabel(due))}
+                                        </span>`
+                                      : ''
+                                  }
+
+                                  ${
+                                    isScheduled
+                                      ? `<span class="px-1.5 py-0.5 rounded lh-badge-success font-semibold font-mono-code">
+                                          📅 ${escapeHtml(formatIsoToShortLabel(item.scheduledDate || todayIso))} ${escapeHtml(item.scheduledTime || '')}
+                                        </span>`
+                                      : ''
+                                  }
+
+                                  ${
+                                    item.recurrence && item.recurrence !== 'none'
+                                      ? `<span class="px-1.5 py-0.5 rounded lh-badge-sec font-semibold">↻ ${escapeHtml(item.recurrence)}</span>`
+                                      : ''
+                                  }
+
+                                  ${
+                                    subs.length > 0
+                                      ? `<span class="px-1.5 py-0.5 rounded lh-surface lh-text-sec font-mono-code">☑ ${subsDone}/${subs.length}</span>`
+                                      : ''
+                                  }
+
+                                  <span class="px-1.5 py-0.5 rounded lh-surface lh-text-muted">${escapeHtml(item.assignedTo || 'Dan')}</span>
+
+                                  ${(item.tags || [])
+                                    .map((t) => `<span class="px-1.5 py-0.5 rounded lh-surface lh-text-sec">#${escapeHtml(t)}</span>`)
+                                    .join('')}
+                                </div>
+
+                                <!-- QUICK SCHEDULE ACTION ROW -->
+                                <div class="pt-1.5 border-t lh-border flex items-center justify-between gap-1.5">
+                                  <button onclick="window.Lighthouse.openTaskProModal('${board.id}', '${item.id}')"
+                                    class="text-[11px] font-semibold lh-text-sec hover:lh-text-main flex items-center gap-1">
+                                    <i data-lucide="calendar-clock" class="w-3 h-3" style="color: var(--accent-primary);"></i>
+                                    <span>${isScheduled ? 'Reschedule / Details' : 'Schedule / Subtasks'}</span>
+                                  </button>
+                                  <div class="flex items-center gap-1">
+                                    ${
+                                      isScheduled
+                                        ? `<a href="${escapeHtml(buildGoogleCalendarEventUrl(item, board.title))}" target="_blank" rel="noopener noreferrer"
+                                            class="px-2 py-1 rounded-lg lh-surface text-[10px] font-semibold lh-text-sec hover:lh-text-main" title="Add to Google Calendar">
+                                            + GCal
+                                          </a>`
+                                        : `<button onclick="window.Lighthouse.quickScheduleTaskToday('${board.id}', '${item.id}')"
+                                            class="px-2 py-1 rounded-lg lh-btn-soft text-[10px] font-semibold" title="Schedule on Watchtower Calendar">
+                                            + Watchtower
+                                          </button>`
+                                    }
+                                  </div>
+                                </div>
+                              </div>
+                            `;
+                          })
+                          .join('')
+                  }
+                </div>
+              </div>
+
+              <!-- PER-BOARD NATURAL LANGUAGE QUICK ADD -->
+              <div class="pt-3 border-t lh-border flex items-center gap-2">
+                <input id="list-input-${board.id}" type="text"
+                  onkeydown="if(event.key==='Enter') window.Lighthouse.addListItem('${board.id}')"
+                  placeholder="Quick add (e.g. Call vet tomorrow 2pm !p1)..."
+                  class="flex-1 px-3 py-2 rounded-xl lh-input" />
+                <button onclick="window.Lighthouse.addListItem('${board.id}')" class="p-2.5 rounded-xl lh-btn-primary shrink-0" title="Add Task">
+                  <i data-lucide="plus" class="w-4 h-4"></i>
+                </button>
+              </div>
+            </div>
+          `;
+        })
+        .join('');
+    }
+
+    function renderListsView() {
+      const boards = state.lists || [];
+      const allTasks = boards.flatMap((b) => b.items || []);
+      const openTasks = allTasks.filter((t) => !t.completed);
+      const todayIso = getLocalIsoDate(0);
+      const todayOrOverdueCount = openTasks.filter((t) => {
+        const d = t.scheduledDate || t.dueDate;
+        return d && d <= todayIso;
+      }).length;
+      const highPriCount = openTasks.filter((t) => t.priority === 'p1' || t.priority === 'p2').length;
+      const scheduledCount = openTasks.filter((t) => t.scheduledDate || t.watchBlockId).length;
+      const recurringCount = openTasks.filter((t) => t.recurrence && t.recurrence !== 'none').length;
+
+      const filterMode = state.listFilterMode || 'all';
+      const sortBy = state.listSortBy || 'priority';
+
+      const focusPct =
+        focusTimer.totalSec > 0
+          ? Math.min(100, Math.round(((focusTimer.totalSec - focusTimer.remainingSec) / focusTimer.totalSec) * 100))
+          : 0;
+
+      return `
+        <div class="space-y-5">
+          <!-- BUILT-IN POMODORO / FOCUS TIMER BAR (ACTIVE WHEN A TASK IS FOCUSED) -->
+          ${
+            focusTimer.itemId
+              ? `<div class="lh-surface rounded-2xl p-4 border-l-4 space-y-3" style="border-left-color: var(--accent-primary);">
+                  <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex items-center gap-3 min-w-0">
+                      <div class="px-3 py-1.5 rounded-xl lh-badge font-mono-code font-bold text-lg" id="focus-timer-clock">
+                        ${formatClockMMSS(focusTimer.remainingSec)}
+                      </div>
+                      <div class="min-w-0">
+                        <span class="text-[10px] font-bold uppercase tracking-wider" style="color: var(--accent-primary);">Active Focus Session</span>
+                        <p class="font-bold text-sm lh-text-main truncate">${escapeHtml(focusTimer.title)}</p>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                      <button onclick="window.Lighthouse.toggleFocusTimer()" class="px-3 py-1.5 rounded-xl lh-btn-primary text-xs font-bold flex items-center gap-1">
+                        <i data-lucide="${focusTimer.running ? 'pause' : 'play'}" class="w-3.5 h-3.5"></i>
+                        <span>${focusTimer.running ? 'Pause' : 'Resume'}</span>
+                      </button>
+                      <button onclick="window.Lighthouse.addFocusMins(5)" class="px-2.5 py-1.5 rounded-xl lh-elevated text-xs font-semibold lh-text-main">+5m</button>
+                      <button onclick="window.Lighthouse.completeFocusTask()" class="px-3 py-1.5 rounded-xl lh-badge-success text-xs font-bold">✓ Finish Task</button>
+                      <button onclick="window.Lighthouse.stopFocusTimer()" class="p-1.5 rounded-xl lh-elevated lh-text-sec hover:lh-text-main" title="Close Timer">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="w-full h-1.5 rounded-full lh-elevated overflow-hidden">
+                    <div id="focus-timer-bar" class="h-full rounded-full transition-all duration-300" style="width: ${focusPct}%; background-color: var(--accent-primary);"></div>
+                  </div>
+                </div>`
+              : ''
+          }
+
+          <!-- TOP PRO COMMAND BAR: NATURAL-LANGUAGE QUICK CAPTURE -->
+          <div class="lh-surface rounded-2xl p-4 sm:p-5 space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-[11px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full lh-badge">Harbor Wall Pro</span>
+                  <span class="text-xs font-mono-code lh-text-sec">${openTasks.length} open • ${scheduledCount} scheduled on Watchtower</span>
+                </div>
+                <h3 class="text-lg sm:text-xl font-bold lh-text-main mt-1">Shared Task Command &amp; Calendar Time-Blocking</h3>
+              </div>
+              <div class="flex items-center gap-2">
+                <input id="new-board-title" type="text"
+                  onkeydown="if(event.key==='Enter') window.Lighthouse.createListBoard()"
+                  placeholder="New list board..." class="px-3 py-2 rounded-xl lh-input w-44 sm:w-48" />
+                <button onclick="window.Lighthouse.createListBoard()" class="px-3.5 py-2 rounded-xl lh-btn-soft text-xs shrink-0">+ Board</button>
+              </div>
+            </div>
+
+            <!-- SMART NATURAL-LANGUAGE CAPTURE -->
+            <div class="p-3.5 rounded-2xl lh-elevated space-y-2.5">
+              <div class="flex items-center justify-between gap-2 flex-wrap">
+                <span class="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5" style="color: var(--accent-primary);">
+                  <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                  <span>Smart Quick Capture (Auto-Parses Dates, Times, Duration, Priority &amp; Tags)</span>
+                </span>
+                <span class="text-[10px] font-mono-code lh-text-muted">Try: "Order mulch tomorrow 2pm 30m !p1 #yard @Dan weekly"</span>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                <input id="pro-quick-capture" type="text"
+                  onkeydown="if(event.key==='Enter') window.Lighthouse.quickCaptureProTask()"
+                  placeholder="Type a task with optional date, time, !p1-p4, #tag, @person..."
+                  class="sm:col-span-7 px-3.5 py-2.5 rounded-xl lh-input" />
+                <select id="pro-quick-board" class="sm:col-span-3 px-3 py-2.5 rounded-xl lh-input text-xs font-semibold">
+                  ${boards.map((b) => `<option value="${b.id}">${escapeHtml(b.title)}</option>`).join('')}
+                </select>
+                <button onclick="window.Lighthouse.quickCaptureProTask()"
+                  class="sm:col-span-2 py-2.5 px-4 rounded-xl lh-btn-primary text-xs font-bold">
+                  + Capture
+                </button>
+              </div>
+            </div>
+
+            <!-- SMART FILTER PILLS, LIVE SEARCH & SORT CONTROLS -->
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-1">
+              <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                ${[
+                  { id: 'all', label: `All (${openTasks.length})` },
+                  { id: 'today', label: `Today & Overdue (${todayOrOverdueCount})` },
+                  { id: 'high', label: `P1–P2 Priority (${highPriCount})` },
+                  { id: 'scheduled', label: `Scheduled (${scheduledCount})` },
+                  { id: 'recurring', label: `Recurring (${recurringCount})` }
+                ]
+                  .map(
+                    (f) => `
+                    <button onclick="window.Lighthouse.setListFilter('${f.id}')"
+                      class="px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition ${
+                        filterMode === f.id ? 'lh-btn-primary' : 'lh-elevated lh-text-sec hover:lh-text-main'
+                      }">
+                      ${escapeHtml(f.label)}
+                    </button>
+                  `
+                  )
+                  .join('')}
+              </div>
+
+              <div class="flex items-center gap-2 flex-wrap">
+                <input id="list-search-input" type="search"
+                  value="${escapeHtml(state.listSearchQuery || '')}"
+                  oninput="window.Lighthouse.updateListSearch(this.value)"
+                  placeholder="Search tasks, #tags..."
+                  class="px-3 py-1.5 rounded-xl lh-input text-xs w-40 sm:w-44" />
+                <select onchange="window.Lighthouse.setListSort(this.value)" class="px-2.5 py-1.5 rounded-xl lh-input text-xs font-semibold">
+                  <option value="priority" ${sortBy === 'priority' ? 'selected' : ''}>Sort: Priority</option>
+                  <option value="dueDate" ${sortBy === 'dueDate' ? 'selected' : ''}>Sort: Due Date</option>
+                  <option value="manual" ${sortBy === 'manual' ? 'selected' : ''}>Sort: Manual</option>
+                </select>
+                <button onclick="window.Lighthouse.toggleHideCompleted()"
+                  class="px-2.5 py-1.5 rounded-xl text-xs font-semibold ${state.listHideCompleted ? 'lh-btn-soft' : 'lh-elevated lh-text-sec'}">
+                  ${state.listHideCompleted ? 'Hidden Done' : 'Hide Done'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- BOARDS GRID (LIVE-UPDATED BY SEARCH WITHOUT LOSING INPUT FOCUS) -->
+          <div id="harbor-boards-container" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            ${renderHarborBoardsGridHtml()}
           </div>
         </div>
       `;
     }
 
     // =========================================================================
-    // PAGE-SPECIFIC ACTIONS (WATCHTOWER, WORKOUTS, LISTS)
+    // PRO TASK EDITOR & CALENDAR SCHEDULER MODAL RENDERER
+    // =========================================================================
+    function renderTaskProModalBody() {
+      const container = document.getElementById('task-pro-modal-body');
+      if (!container || !activeTaskModalRef) return;
+      const { board, item } = findListItem(activeTaskModalRef.boardId, activeTaskModalRef.itemId);
+      if (!board || !item) return;
+
+      const isScheduled = Boolean(item.scheduledDate || item.watchBlockId);
+      const defaultSchedDate = item.scheduledDate || item.dueDate || getLocalIsoDate(0);
+      const gcalUrl = buildGoogleCalendarEventUrl(
+        { ...item, scheduledDate: defaultSchedDate },
+        board.title
+      );
+
+      container.innerHTML = `
+        <div class="space-y-3">
+          <div>
+            <label class="text-[11px] font-semibold lh-text-sec block mb-1">Task Title</label>
+            <input id="tm-text" type="text" value="${escapeHtml(item.text)}" class="w-full px-3.5 py-2.5 rounded-xl lh-input font-semibold" />
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div>
+              <label class="text-[11px] font-semibold lh-text-sec block mb-1">Priority</label>
+              <select id="tm-priority" class="w-full px-2.5 py-2 rounded-xl lh-input text-xs font-semibold">
+                ${Object.values(TASK_PRIORITIES)
+                  .map(
+                    (p) => `<option value="${p.id}" ${item.priority === p.id ? 'selected' : ''}>${escapeHtml(p.label)}</option>`
+                  )
+                  .join('')}
+              </select>
+            </div>
+            <div>
+              <label class="text-[11px] font-semibold lh-text-sec block mb-1">Due Date</label>
+              <input id="tm-due" type="date" value="${escapeHtml(item.dueDate || '')}" class="w-full px-2.5 py-2 rounded-xl lh-input font-mono-code text-xs" />
+            </div>
+            <div>
+              <label class="text-[11px] font-semibold lh-text-sec block mb-1">Repeat Rule</label>
+              <select id="tm-recurrence" class="w-full px-2.5 py-2 rounded-xl lh-input text-xs">
+                ${TASK_RECURRENCE_OPTIONS.map(
+                  (r) => `<option value="${r.id}" ${(item.recurrence || 'none') === r.id ? 'selected' : ''}>${escapeHtml(r.label)}</option>`
+                ).join('')}
+              </select>
+            </div>
+            <div>
+              <label class="text-[11px] font-semibold lh-text-sec block mb-1">Assigned To</label>
+              <input id="tm-assignee" type="text" value="${escapeHtml(item.assignedTo || 'Dan')}" class="w-full px-2.5 py-2 rounded-xl lh-input text-xs" />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div>
+              <label class="text-[11px] font-semibold lh-text-sec block mb-1">Move to Board</label>
+              <select id="tm-board" class="w-full px-2.5 py-2 rounded-xl lh-input text-xs font-semibold">
+                ${(state.lists || [])
+                  .map(
+                    (b) => `<option value="${b.id}" ${b.id === board.id ? 'selected' : ''}>${escapeHtml(b.title)}</option>`
+                  )
+                  .join('')}
+              </select>
+            </div>
+            <div>
+              <label class="text-[11px] font-semibold lh-text-sec block mb-1">Tags (comma separated)</label>
+              <input id="tm-tags" type="text" value="${escapeHtml((item.tags || []).join(', '))}" placeholder="yard, costco, errands..." class="w-full px-3 py-2 rounded-xl lh-input text-xs" />
+            </div>
+          </div>
+
+          <div>
+            <label class="text-[11px] font-semibold lh-text-sec block mb-1">Notes &amp; Context</label>
+            <textarea id="tm-notes" rows="2" placeholder="Links, measurements, or details..." class="w-full px-3 py-2 rounded-xl lh-input text-xs">${escapeHtml(item.notes || '')}</textarea>
+          </div>
+        </div>
+
+        <!-- CALENDAR TIME-BLOCKING & GOOGLE CALENDAR SCHEDULER -->
+        <div class="p-3.5 rounded-2xl lh-elevated space-y-3 border-l-4" style="border-left-color: var(--success-accent);">
+          <div class="flex items-center justify-between gap-2 flex-wrap">
+            <span class="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5" style="color: var(--success-accent);">
+              <i data-lucide="calendar-clock" class="w-4 h-4"></i>
+              <span>Schedule on Watchtower &amp; Calendar</span>
+            </span>
+            ${
+              isScheduled
+                ? `<button type="button" onclick="window.Lighthouse.unscheduleModalTask()" class="text-[11px] font-semibold text-rose-400 hover:underline">
+                    Remove from Watchtower
+                  </button>`
+                : ''
+            }
+          </div>
+
+          <div class="grid grid-cols-3 gap-2">
+            <div>
+              <label class="text-[10px] font-semibold lh-text-sec block mb-1">Calendar Date</label>
+              <input id="tm-sched-date" type="date" value="${escapeHtml(defaultSchedDate)}" class="w-full px-2.5 py-2 rounded-xl lh-input font-mono-code text-xs" />
+            </div>
+            <div>
+              <label class="text-[10px] font-semibold lh-text-sec block mb-1">Start Time</label>
+              <input id="tm-sched-time" type="time" value="${escapeHtml(item.scheduledTime || '15:00')}" class="w-full px-2.5 py-2 rounded-xl lh-input font-mono-code text-xs" />
+            </div>
+            <div>
+              <label class="text-[10px] font-semibold lh-text-sec block mb-1">Duration (m)</label>
+              <input id="tm-duration" type="number" min="5" max="360" step="5" value="${Number(item.durationMins) || 30}" class="w-full px-2.5 py-2 rounded-xl lh-input font-mono-code text-xs" />
+            </div>
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+            <button type="button" onclick="window.Lighthouse.saveTaskProModal(true)"
+              class="flex-1 py-2.5 px-3.5 rounded-xl lh-btn-primary text-xs font-bold flex items-center justify-center gap-1.5">
+              <i data-lucide="calendar-plus" class="w-4 h-4"></i>
+              <span>${isScheduled ? 'Update Watchtower Time-Block' : 'Save & Schedule on Watchtower'}</span>
+            </button>
+            <a href="${escapeHtml(gcalUrl)}" target="_blank" rel="noopener noreferrer"
+              class="py-2.5 px-3.5 rounded-xl lh-btn-soft text-xs font-bold flex items-center justify-center gap-1.5">
+              <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+              <span>Add to Google Cal</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- SUBTASKS / NESTED CHECKLIST -->
+        <div class="p-3.5 rounded-2xl lh-elevated space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold uppercase tracking-wider lh-text-main">Subtasks (${(item.subtasks || []).filter((s) => s.completed).length}/${(item.subtasks || []).length})</span>
+          </div>
+          <div class="space-y-1.5">
+            ${(item.subtasks || [])
+              .map(
+                (st) => `
+                <div class="flex items-center justify-between gap-2 p-2 rounded-xl lh-surface">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <button type="button" onclick="window.Lighthouse.toggleModalSubtask('${st.id}')"
+                      class="w-4 h-4 rounded border lh-border flex items-center justify-center shrink-0"
+                      style="${st.completed ? 'background-color: var(--success-accent); color: var(--accent-contrast);' : ''}">
+                      ${st.completed ? '<i data-lucide="check" class="w-3 h-3"></i>' : ''}
+                    </button>
+                    <span class="text-xs lh-text-main ${st.completed ? 'line-through lh-text-muted' : ''}">${escapeHtml(st.text)}</span>
+                  </div>
+                  <button type="button" onclick="window.Lighthouse.deleteModalSubtask('${st.id}')" class="p-1 lh-text-muted hover:lh-text-main">
+                    <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                  </button>
+                </div>
+              `
+              )
+              .join('')}
+          </div>
+          <div class="flex items-center gap-2 pt-1">
+            <input id="tm-new-subtask" type="text"
+              onkeydown="if(event.key==='Enter'){ event.preventDefault(); window.Lighthouse.addModalSubtask(); }"
+              placeholder="Add checklist subtask..." class="flex-1 px-3 py-2 rounded-xl lh-input text-xs" />
+            <button type="button" onclick="window.Lighthouse.addModalSubtask()" class="px-3 py-2 rounded-xl lh-btn-soft text-xs font-bold shrink-0">
+              + Step
+            </button>
+          </div>
+        </div>
+
+        <!-- MODAL FOOTER ACTIONS -->
+        <div class="pt-2 border-t lh-border flex items-center justify-between gap-2 flex-wrap">
+          <button type="button" onclick="window.Lighthouse.deleteTaskItem('${board.id}', '${item.id}')"
+            class="px-3 py-2 rounded-xl lh-elevated text-rose-400 text-xs font-semibold flex items-center gap-1.5">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            <span>Delete Task</span>
+          </button>
+          <div class="flex items-center gap-2">
+            <button type="button" onclick="window.Lighthouse.closeTaskProModal()" class="px-3.5 py-2 rounded-xl lh-elevated lh-text-sec text-xs font-semibold">
+              Cancel
+            </button>
+            <button type="button" onclick="window.Lighthouse.saveTaskProModal(false)" class="px-4 py-2 rounded-xl lh-btn-primary text-xs font-bold">
+              Save Changes
+            </button>
+          </div>
+        </div>
+      `;
+
+      if (window.lucide) window.lucide.createIcons();
+    }
+
+    // =========================================================================
+    // FOCUS TIMER TICK HELPER (DOM-TARGETED SO IT NEVER INTERRUPTS TYPING)
+    // =========================================================================
+    function tickFocusTimer() {
+      if (!focusTimer.running) return;
+      focusTimer.remainingSec = Math.max(0, focusTimer.remainingSec - 1);
+      const clockEl = document.getElementById('focus-timer-clock');
+      if (clockEl) clockEl.textContent = formatClockMMSS(focusTimer.remainingSec);
+      const barEl = document.getElementById('focus-timer-bar');
+      if (barEl && focusTimer.totalSec > 0) {
+        const pct = Math.min(100, Math.round(((focusTimer.totalSec - focusTimer.remainingSec) / focusTimer.totalSec) * 100));
+        barEl.style.width = `${pct}%`;
+      }
+      if (focusTimer.remainingSec <= 0) {
+        focusTimer.running = false;
+        clearInterval(focusTimer.intervalId);
+        focusTimer.intervalId = null;
+        showToast(`Focus block complete for "${focusTimer.title}"!`);
+        renderApp();
+      }
+    }
+
+    // =========================================================================
+    // PAGE-SPECIFIC ACTIONS (WATCHTOWER, WORKOUTS, HARBOR WALL PRO)
     // =========================================================================
     const pageActions = {
       // Watchtower Actions
@@ -642,8 +1440,20 @@
           }
           return b;
         });
+
+        // Two-way completion sync back to Harbor Wall Lists
+        if (toggledBlock && toggledBlock.sourceType === 'list' && toggledBlock.sourceId) {
+          for (const board of state.lists || []) {
+            const match = (board.items || []).find((it) => it.id === toggledBlock.sourceId);
+            if (match && match.completed !== toggledBlock.completed) {
+              this.toggleListItem(board.id, match.id, true);
+              break;
+            }
+          }
+        }
+
         if (toggledBlock && toggledBlock.completed) {
-          const targetDate = getLocalIsoDate(toggledBlock.dayOffset || 0);
+          const targetDate = toggledBlock.dateStr || getLocalIsoDate(toggledBlock.dayOffset || 0);
           const log = ensureDailyLog(targetDate);
           if (toggledBlock.category === 'prayer') log.prayerDone = true;
           else if (toggledBlock.category === 'night') log.nightDone = true;
@@ -658,26 +1468,60 @@
         saveState();
         renderApp();
       },
+
+      // TWO-WAY REMOVAL: Removing a routine/prayer/task block from Watchtower updates its source board!
       deletePlanBlock(blockId) {
         if (state.planLocked) return showToast('Unlock Watchtower first to remove blocks.');
+        const target = (state.planBlocks || []).find((b) => b.id === blockId);
+        if (!target) return;
+
         state.planBlocks = state.planBlocks.filter((b) => b.id !== blockId);
+
+        let syncNote = `Removed "${target.title}" from Watchtower.`;
+        if (target.sourceType === 'morning' && target.sourceId) {
+          state.morningBoardIds = (state.morningBoardIds || []).filter((id) => id !== target.sourceId);
+          syncNote = `Removed "${target.title}" from Watchtower & Morning Board.`;
+        } else if (target.sourceType === 'night' && target.sourceId) {
+          state.nightBoardIds = (state.nightBoardIds || []).filter((id) => id !== target.sourceId);
+          syncNote = `Removed "${target.title}" from Watchtower & Night Watch Board.`;
+        } else if (target.sourceType === 'prayer' && target.sourceId) {
+          state.prayerCards = (state.prayerCards || []).map((c) =>
+            c.id === target.sourceId ? { ...c, onActiveBoard: false } : c
+          );
+          syncNote = `Removed "${target.title}" from Watchtower & unpinned from Prayer Board.`;
+        } else if (target.sourceType === 'list') {
+          state.lists = (state.lists || []).map((b) => ({
+            ...b,
+            items: (b.items || []).map((it) =>
+              it.id === target.sourceId || it.watchBlockId === target.id
+                ? { ...it, watchBlockId: null, scheduledDate: '' }
+                : it
+            )
+          }));
+          syncNote = `Unscheduled "${target.title}" from Watchtower (task kept in Harbor Wall).`;
+        }
+
         saveState();
         renderApp();
+        showToast(syncNote);
       },
+
       addCustomWatchBlock() {
         if (state.planLocked) return showToast('Unlock Watchtower first to add blocks.');
         const titleEl = document.getElementById('quick-plan-title');
         const timeEl = document.getElementById('quick-plan-time');
         const title = (titleEl?.value || '').trim();
         if (!title) return;
+        const offset = state.selectedDayOffset > 1 ? 1 : state.selectedDayOffset;
         state.planBlocks.push({
           id: `pb-${Date.now()}`,
           title,
           startTime: timeEl?.value || '15:00',
           durationMins: 25,
           category: 'custom',
+          dateStr: getLocalIsoDate(offset),
           completed: false,
-          dayOffset: state.selectedDayOffset > 1 ? 1 : state.selectedDayOffset
+          dayOffset: offset
         });
         saveState();
         renderApp();
@@ -755,7 +1599,31 @@
         renderApp();
       },
 
-      // Harbor Wall Lists Actions
+      // =========================================================================
+      // HARBOR WALL PRO TASK MANAGER ACTIONS
+      // =========================================================================
+      setListFilter(mode) {
+        state.listFilterMode = mode;
+        renderApp();
+      },
+      setListSort(sortBy) {
+        state.listSortBy = sortBy;
+        saveState();
+        renderApp();
+      },
+      toggleHideCompleted() {
+        state.listHideCompleted = !state.listHideCompleted;
+        saveState();
+        renderApp();
+      },
+      updateListSearch(val) {
+        state.listSearchQuery = val;
+        const grid = document.getElementById('harbor-boards-container');
+        if (grid) {
+          grid.innerHTML = renderHarborBoardsGridHtml();
+          if (window.lucide) window.lucide.createIcons();
+        }
+      },
       createListBoard() {
         const el = document.getElementById('new-board-title');
         const title = (el?.value || '').trim();
@@ -766,64 +1634,314 @@
         showToast(`Created "${title}" board!`);
       },
       deleteListBoard(boardId) {
+        const board = (state.lists || []).find((b) => b.id === boardId);
+        if (board) {
+          const itemIds = new Set((board.items || []).map((i) => i.id));
+          state.planBlocks = (state.planBlocks || []).filter(
+            (pb) => !(pb.sourceType === 'list' && itemIds.has(pb.sourceId))
+          );
+        }
         state.lists = state.lists.filter((b) => b.id !== boardId);
         saveState();
         renderApp();
       },
-      addListItem(boardId) {
-        const el = document.getElementById(`list-input-${boardId}`);
-        const text = (el?.value || '').trim();
-        if (!text) return;
+      clearCompletedInBoard(boardId) {
         state.lists = state.lists.map((b) =>
-          b.id === boardId
-            ? { ...b, items: [...b.items, { id: `li-${Date.now()}`, text, assignedTo: 'Dan', completed: false, scheduledTime: '15:00' }] }
-            : b
+          b.id === boardId ? { ...b, items: (b.items || []).filter((it) => !it.completed) } : b
         );
         saveState();
         renderApp();
+        showToast('Cleared completed tasks from board.');
       },
-      toggleListItem(boardId, itemId) {
-        let completedItemText = null;
-        state.lists = state.lists.map((b) =>
-          b.id === boardId
-            ? {
-                ...b,
-                items: b.items.map((it) => {
-                  if (it.id === itemId) {
-                    const nextCompleted = !it.completed;
-                    if (nextCompleted) completedItemText = `[${b.title}] ${it.text}`;
-                    return { ...it, completed: nextCompleted };
-                  }
-                  return it;
-                })
-              }
-            : b
+      quickCaptureProTask() {
+        const inputEl = document.getElementById('pro-quick-capture');
+        const boardId = document.getElementById('pro-quick-board')?.value || state.lists?.[0]?.id;
+        const raw = (inputEl?.value || '').trim();
+        if (!raw || !boardId) return;
+        this.insertParsedTask(boardId, raw);
+      },
+      addListItem(boardId) {
+        const el = document.getElementById(`list-input-${boardId}`);
+        const raw = (el?.value || '').trim();
+        if (!raw) return;
+        this.insertParsedTask(boardId, raw);
+      },
+      insertParsedTask(boardId, rawText) {
+        const board = (state.lists || []).find((b) => b.id === boardId);
+        if (!board) return;
+        const parsed = parseNaturalTaskInput(rawText);
+        const newItem = {
+          id: `li-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+          text: parsed.text || rawText,
+          assignedTo: parsed.assignedTo,
+          completed: false,
+          priority: parsed.priority,
+          dueDate: parsed.dueDate,
+          scheduledDate: '',
+          scheduledTime: parsed.scheduledTime,
+          durationMins: parsed.durationMins,
+          recurrence: parsed.recurrence,
+          tags: parsed.tags,
+          notes: '',
+          subtasks: [],
+          watchBlockId: null
+        };
+        board.items.unshift(newItem);
+
+        if (parsed.autoSchedule && !state.planLocked) {
+          upsertWatchBlockForTask(board, newItem, parsed.scheduledDate, parsed.scheduledTime, parsed.durationMins);
+        }
+
+        saveState();
+        renderApp();
+        showToast(
+          parsed.autoSchedule
+            ? `Added "${newItem.text}" & scheduled on Watchtower (${parsed.scheduledDate} @ ${parsed.scheduledTime})!`
+            : `Added "${newItem.text}" to ${board.title}!`
         );
-        if (completedItemText) {
+      },
+      toggleListItem(boardId, itemId, skipWatchSync = false) {
+        const { board, item } = findListItem(boardId, itemId);
+        if (!board || !item) return;
+
+        const nextCompleted = !item.completed;
+
+        // Auto-advance recurring task when checked off
+        if (nextCompleted && item.recurrence && item.recurrence !== 'none') {
+          const todayIso = getLocalIsoDate(0);
+          const todayLog = ensureDailyLog(todayIso);
+          const logText = `[${board.title}] ${item.text}`;
+          if (!(todayLog.todos || []).some((t) => t.text === logText)) {
+            todayLog.todos.push({ id: `dh-${Date.now()}`, text: logText, completed: true });
+          }
+
+          const baseDate = item.scheduledDate || item.dueDate || todayIso;
+          const nextDate = getNextRecurrenceDate(baseDate, item.recurrence);
+          item.dueDate = nextDate;
+          item.subtasks = (item.subtasks || []).map((s) => ({ ...s, completed: false }));
+          item.completed = false;
+
+          if (item.scheduledDate || item.watchBlockId) {
+            upsertWatchBlockForTask(board, item, nextDate, item.scheduledTime, item.durationMins);
+          }
+
+          saveState();
+          renderApp();
+          showToast(`Completed "${item.text}"! Next ${item.recurrence} occurrence set for ${formatIsoToShortLabel(nextDate)}.`);
+          return;
+        }
+
+        item.completed = nextCompleted;
+
+        // Sync completion state with Watchtower block if linked
+        if (!skipWatchSync && item.watchBlockId) {
+          state.planBlocks = (state.planBlocks || []).map((pb) =>
+            pb.id === item.watchBlockId ? { ...pb, completed: nextCompleted } : pb
+          );
+        }
+
+        if (nextCompleted) {
           const todayLog = ensureDailyLog(getLocalIsoDate(0));
-          const exists = (todayLog.todos || []).some((t) => t.text === completedItemText);
-          if (!exists) {
-            todayLog.todos.push({ id: `dh-${Date.now()}`, text: completedItemText, completed: true });
+          const logText = `[${board.title}] ${item.text}`;
+          if (!(todayLog.todos || []).some((t) => t.text === logText)) {
+            todayLog.todos.push({ id: `dh-${Date.now()}`, text: logText, completed: true });
           }
         }
         saveState();
         renderApp();
       },
-      pushListItemToWatch(boardId, itemId) {
-        const board = state.lists.find((b) => b.id === boardId);
-        const item = board?.items.find((i) => i.id === itemId);
-        if (!item) return;
-        state.planBlocks.push({
-          id: `pb-${Date.now()}`,
-          title: `[List] ${item.text}`,
-          startTime: item.scheduledTime || '15:00',
-          durationMins: 30,
-          category: 'list',
-          completed: false,
-          dayOffset: 0
-        });
+      quickScheduleTaskToday(boardId, itemId) {
+        if (state.planLocked) return showToast('Unlock 24h Watchtower first.');
+        const { board, item } = findListItem(boardId, itemId);
+        if (!board || !item) return;
+        const targetDate = item.dueDate && item.dueDate >= getLocalIsoDate(0) ? item.dueDate : getLocalIsoDate(0);
+        upsertWatchBlockForTask(board, item, targetDate, item.scheduledTime || '15:00', item.durationMins || 30);
         saveState();
-        showToast(`Added "${item.text}" to 24h Watchtower!`);
+        renderApp();
+        showToast(`Scheduled "${item.text}" on Watchtower (${formatIsoToShortLabel(targetDate)} @ ${item.scheduledTime})!`);
+      },
+      openTaskProModal(boardId, itemId) {
+        const { board, item } = findListItem(boardId, itemId);
+        if (!board || !item) return;
+        activeTaskModalRef = { boardId, itemId };
+        const modal = document.getElementById('task-pro-modal');
+        if (!modal) return;
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        renderTaskProModalBody();
+      },
+      closeTaskProModal() {
+        const modal = document.getElementById('task-pro-modal');
+        if (!modal) return;
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        activeTaskModalRef = null;
+      },
+      saveTaskProModal(alsoSchedule = false) {
+        if (!activeTaskModalRef) return;
+        const { board: oldBoard, item } = findListItem(activeTaskModalRef.boardId, activeTaskModalRef.itemId);
+        if (!oldBoard || !item) return;
+
+        const nextText = (document.getElementById('tm-text')?.value || '').trim();
+        if (!nextText) return showToast('Task title cannot be empty.');
+
+        item.text = nextText;
+        item.priority = document.getElementById('tm-priority')?.value || 'p3';
+        item.dueDate = document.getElementById('tm-due')?.value || '';
+        item.recurrence = document.getElementById('tm-recurrence')?.value || 'none';
+        item.assignedTo = (document.getElementById('tm-assignee')?.value || '').trim() || 'Dan';
+        item.notes = (document.getElementById('tm-notes')?.value || '').trim();
+        item.tags = (document.getElementById('tm-tags')?.value || '')
+          .split(',')
+          .map((t) => t.trim().replace(/^#/, '').toLowerCase())
+          .filter(Boolean);
+
+        const schedDate = document.getElementById('tm-sched-date')?.value || getLocalIsoDate(0);
+        const schedTime = document.getElementById('tm-sched-time')?.value || '15:00';
+        const durationMins = Math.max(5, Number(document.getElementById('tm-duration')?.value) || 30);
+        item.scheduledTime = schedTime;
+        item.durationMins = durationMins;
+
+        // Handle moving task to another board
+        const targetBoardId = document.getElementById('tm-board')?.value || oldBoard.id;
+        let activeBoard = oldBoard;
+        if (targetBoardId !== oldBoard.id) {
+          const newBoard = (state.lists || []).find((b) => b.id === targetBoardId);
+          if (newBoard) {
+            oldBoard.items = oldBoard.items.filter((i) => i.id !== item.id);
+            newBoard.items.unshift(item);
+            activeBoard = newBoard;
+          }
+        }
+
+        if (alsoSchedule || item.watchBlockId) {
+          if (state.planLocked && alsoSchedule) {
+            showToast('Saved task details (unlock Watchtower to change calendar blocks).');
+          } else {
+            upsertWatchBlockForTask(activeBoard, item, schedDate, schedTime, durationMins);
+          }
+        }
+
+        saveState();
+        this.closeTaskProModal();
+        renderApp();
+        showToast(
+          alsoSchedule
+            ? `Scheduled "${item.text}" on Watchtower (${formatIsoToShortLabel(schedDate)} @ ${schedTime})!`
+            : `Saved updates to "${item.text}".`
+        );
+      },
+      unscheduleModalTask() {
+        if (!activeTaskModalRef) return;
+        const { item } = findListItem(activeTaskModalRef.boardId, activeTaskModalRef.itemId);
+        if (!item) return;
+        state.planBlocks = (state.planBlocks || []).filter(
+          (b) => !(b.id === item.watchBlockId || (b.sourceType === 'list' && b.sourceId === item.id))
+        );
+        item.watchBlockId = null;
+        item.scheduledDate = '';
+        saveState();
+        renderTaskProModalBody();
+        renderApp();
+        showToast('Removed time-block from Watchtower Calendar.');
+      },
+      addModalSubtask() {
+        if (!activeTaskModalRef) return;
+        const { item } = findListItem(activeTaskModalRef.boardId, activeTaskModalRef.itemId);
+        const inp = document.getElementById('tm-new-subtask');
+        const text = (inp?.value || '').trim();
+        if (!item || !text) return;
+        if (!Array.isArray(item.subtasks)) item.subtasks = [];
+        item.subtasks.push({ id: `st-${Date.now()}`, text, completed: false });
+        saveState();
+        renderTaskProModalBody();
+        renderApp();
+      },
+      toggleModalSubtask(subId) {
+        if (!activeTaskModalRef) return;
+        const { item } = findListItem(activeTaskModalRef.boardId, activeTaskModalRef.itemId);
+        if (!item) return;
+        item.subtasks = (item.subtasks || []).map((s) =>
+          s.id === subId ? { ...s, completed: !s.completed } : s
+        );
+        saveState();
+        renderTaskProModalBody();
+        renderApp();
+      },
+      deleteModalSubtask(subId) {
+        if (!activeTaskModalRef) return;
+        const { item } = findListItem(activeTaskModalRef.boardId, activeTaskModalRef.itemId);
+        if (!item) return;
+        item.subtasks = (item.subtasks || []).filter((s) => s.id !== subId);
+        saveState();
+        renderTaskProModalBody();
+        renderApp();
+      },
+      deleteTaskItem(boardId, itemId) {
+        const { board, item } = findListItem(boardId, itemId);
+        if (!board || !item) return;
+        state.planBlocks = (state.planBlocks || []).filter(
+          (b) => !(b.id === item.watchBlockId || (b.sourceType === 'list' && b.sourceId === item.id))
+        );
+        board.items = board.items.filter((i) => i.id !== itemId);
+        saveState();
+        this.closeTaskProModal();
+        renderApp();
+        showToast(`Deleted "${item.text}".`);
+      },
+
+      // Focus / Pomodoro Timer Actions
+      startFocusTimer(boardId, itemId) {
+        const { item } = findListItem(boardId, itemId);
+        if (!item) return;
+        if (focusTimer.intervalId) clearInterval(focusTimer.intervalId);
+        const mins = Math.max(5, Math.min(120, Number(item.durationMins) || 25));
+        focusTimer.boardId = boardId;
+        focusTimer.itemId = itemId;
+        focusTimer.title = item.text;
+        focusTimer.totalSec = mins * 60;
+        focusTimer.remainingSec = mins * 60;
+        focusTimer.running = true;
+        focusTimer.intervalId = setInterval(tickFocusTimer, 1000);
+        renderApp();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        showToast(`Focus timer started (${mins}m): "${item.text}"`);
+      },
+      toggleFocusTimer() {
+        if (!focusTimer.itemId) return;
+        focusTimer.running = !focusTimer.running;
+        if (focusTimer.running && !focusTimer.intervalId) {
+          focusTimer.intervalId = setInterval(tickFocusTimer, 1000);
+        } else if (!focusTimer.running && focusTimer.intervalId) {
+          clearInterval(focusTimer.intervalId);
+          focusTimer.intervalId = null;
+        }
+        renderApp();
+      },
+      addFocusMins(mins) {
+        focusTimer.remainingSec += mins * 60;
+        focusTimer.totalSec += mins * 60;
+        const clockEl = document.getElementById('focus-timer-clock');
+        if (clockEl) clockEl.textContent = formatClockMMSS(focusTimer.remainingSec);
+      },
+      stopFocusTimer() {
+        if (focusTimer.intervalId) clearInterval(focusTimer.intervalId);
+        focusTimer.intervalId = null;
+        focusTimer.running = false;
+        focusTimer.itemId = null;
+        focusTimer.boardId = null;
+        renderApp();
+      },
+      completeFocusTask() {
+        const bId = focusTimer.boardId;
+        const iId = focusTimer.itemId;
+        this.stopFocusTimer();
+        if (bId && iId) {
+          const { item } = findListItem(bId, iId);
+          if (item && !item.completed) {
+            this.toggleListItem(bId, iId);
+          }
+        }
       }
     };
 
