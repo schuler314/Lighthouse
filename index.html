@@ -24,9 +24,10 @@
   <script type="module">
     import {
       WORKOUT_MODALITIES,
-      TODAY_ISO,
       getLocalIsoDate,
-      getDayOffsetFromIsoDate
+      getDayOffsetFromIsoDate,
+      formatShortDate,
+      formatFullDate
     } from './data.js';
     import {
       state,
@@ -35,34 +36,81 @@
       showToast,
       escapeHtml,
       isEventMuted,
+      getEventDayOffset,
       ensureDailyLog,
       initLighthousePage
     } from './core.js';
+
+    function formatIsoToShortLabel(dateStr) {
+      if (!dateStr) return '';
+      const [y, m, d] = dateStr.split('-').map(Number);
+      if (!y || !m || !d) return dateStr;
+      return new Date(y, m - 1, d).toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric'
+      });
+    }
 
     // =========================================================================
     // STATION 1: WATCHTOWER (24H)
     // =========================================================================
     function renderWatchtowerView() {
-      const dayFilter = state.selectedDayOffset > 1 ? 1 : state.selectedDayOffset;
-      const planItems = (state.planBlocks || [])
-        .filter((b) => b.dayOffset === dayFilter)
-        .map((b) => ({ ...b, streamType: 'plan_block', sortTime: b.startTime || '08:00' }));
+      const todayIso = getLocalIsoDate(0);
+      const selOffset = state.selectedDayOffset;
+
+      const planItems =
+        selOffset <= 1
+          ? (state.planBlocks || [])
+              .filter((b) => b.dayOffset === selOffset)
+              .map((b) => ({
+                ...b,
+                streamType: 'plan_block',
+                sortDate: getLocalIsoDate(selOffset),
+                sortTime: b.startTime || '08:00'
+              }))
+          : [];
 
       const workoutItems = (state.workouts || [])
         .map((w) => ({ ...w, computedOffset: getDayOffsetFromIsoDate(w.date) }))
-        .filter((w) => (state.selectedDayOffset === 2 ? w.computedOffset >= 2 : w.computedOffset === state.selectedDayOffset))
+        .filter((w) => w.computedOffset !== null)
+        .filter((w) => (selOffset === 2 ? w.computedOffset >= 2 : w.computedOffset === selOffset))
         .map((w) => ({
           ...w,
           streamType: 'workout_event',
+          sortDate: w.date || todayIso,
           sortTime: w.startTime || '06:00'
         }));
 
-      const calItems = (state.gcalEvents || [])
-        .filter((ev) => (state.selectedDayOffset === 2 ? ev.dayOffset >= 2 : ev.dayOffset === state.selectedDayOffset))
-        .filter((ev) => state.peekFilteredEvents || !isEventMuted(ev))
-        .map((ev) => ({ ...ev, streamType: 'gcal_event', isMuted: isEventMuted(ev), sortTime: ev.startTime || '08:00' }));
+      const allDatedGcalForView = (state.gcalEvents || [])
+        .map((ev) => ({ ...ev, computedOffset: getEventDayOffset(ev) }))
+        .filter((ev) => ev.computedOffset !== null)
+        .filter((ev) => (selOffset === 2 ? ev.computedOffset >= 2 : ev.computedOffset === selOffset));
 
-      const unified = [...calItems, ...workoutItems, ...planItems].sort((a, b) => a.sortTime.localeCompare(b.sortTime));
+      const calItems = allDatedGcalForView
+        .filter((ev) => state.peekFilteredEvents || !isEventMuted(ev))
+        .map((ev) => ({
+          ...ev,
+          streamType: 'gcal_event',
+          isMuted: isEventMuted(ev),
+          sortDate: ev.dateStr,
+          sortTime: ev.startTime || '08:00'
+        }));
+
+      const mutedCount = allDatedGcalForView.length - calItems.length;
+
+      const unified = [...calItems, ...workoutItems, ...planItems].sort(
+        (a, b) => (a.sortDate || '').localeCompare(b.sortDate || '') || a.sortTime.localeCompare(b.sortTime)
+      );
+
+      const syncLabel = state.settings.lastGcalSync || 'Not synced yet';
+      const isLiveSynced = syncLabel.startsWith('Live Sync') || syncLabel.startsWith('.ICS Import');
+      const activeHeadingDate =
+        selOffset === 0
+          ? formatFullDate(0)
+          : selOffset === 1
+          ? formatFullDate(1)
+          : `${formatShortDate(2)} – ${formatShortDate(14)}`;
 
       return `
         <div class="space-y-5">
@@ -70,14 +118,22 @@
           <div class="lh-surface rounded-2xl p-4 sm:p-5 space-y-4">
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <span class="text-[11px] font-semibold uppercase tracking-wider lh-text-sec">24-Hour Watchtower &amp; Filtered Schedule</span>
-                <h3 class="text-lg sm:text-xl font-bold lh-text-main mt-0.5">Clear the Fog • Lock Your Next 24 Hours</h3>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-[11px] font-semibold uppercase tracking-wider lh-text-sec">
+                    ${escapeHtml(activeHeadingDate)}
+                  </span>
+                  <button onclick="window.Lighthouse.openGcalModal()"
+                    class="text-[10px] font-mono-code px-2 py-0.5 rounded-full ${isLiveSynced ? 'lh-badge-success' : 'lh-badge-sec'} hover:opacity-85">
+                    GCal: ${escapeHtml(syncLabel)}
+                  </button>
+                </div>
+                <h3 class="text-lg sm:text-xl font-bold lh-text-main mt-1">Clear the Fog • Lock Your Next 24 Hours</h3>
               </div>
               <div class="flex items-center gap-2">
                 <button onclick="window.Lighthouse.togglePeekMuted()"
                   class="px-3 py-1.5 rounded-xl lh-elevated text-xs font-medium lh-text-sec hover:lh-text-main flex items-center gap-1.5">
                   <i data-lucide="${state.peekFilteredEvents ? 'eye-off' : 'eye'}" class="w-3.5 h-3.5"></i>
-                  <span>${state.peekFilteredEvents ? 'Hide Muted' : 'Peek Muted'}</span>
+                  <span>${state.peekFilteredEvents ? 'Hide Muted' : `Peek Muted${mutedCount > 0 ? ` (${mutedCount})` : ''}`}</span>
                 </button>
                 <button onclick="window.Lighthouse.togglePlanLock()"
                   class="px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 ${
@@ -91,17 +147,17 @@
 
             <div class="grid grid-cols-3 gap-2">
               ${[
-                { offset: 0, label: 'Today (24h)' },
-                { offset: 1, label: 'Tomorrow' },
-                { offset: 2, label: 'Horizon (+2–7d)' }
+                { offset: 0, label: `Today • ${formatShortDate(0)}` },
+                { offset: 1, label: `Tomorrow • ${formatShortDate(1)}` },
+                { offset: 2, label: 'Horizon (+2–14d)' }
               ]
                 .map(
                   (d) => `
                   <button onclick="window.Lighthouse.setDayOffset(${d.offset})"
-                    class="py-2.5 px-3 rounded-xl text-xs font-semibold transition ${
-                      state.selectedDayOffset === d.offset ? 'lh-btn-primary' : 'lh-elevated lh-text-sec'
+                    class="py-2.5 px-2 sm:px-3 rounded-xl text-[11px] sm:text-xs font-semibold transition truncate ${
+                      selOffset === d.offset ? 'lh-btn-primary' : 'lh-elevated lh-text-sec'
                     }">
-                    ${d.label}
+                    ${escapeHtml(d.label)}
                   </button>
                 `
                 )
@@ -114,7 +170,7 @@
             <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b lh-border">
               <div>
                 <h4 class="font-bold text-sm sm:text-base lh-text-main">Chronological Watch Stream (${unified.length})</h4>
-                <p class="text-xs lh-text-sec">Filtered Google Calendar anchors interleaved with your scheduled workouts, routines &amp; tasks</p>
+                <p class="text-xs lh-text-sec">Live Google Calendar anchors interleaved with your scheduled workouts, routines &amp; tasks</p>
               </div>
               <div class="flex flex-wrap gap-1.5">
                 <button onclick="window.Lighthouse.openPdfBuilder()" class="px-2.5 py-1 rounded-lg lh-btn-soft text-xs font-semibold flex items-center gap-1">
@@ -129,89 +185,114 @@
               </div>
             </div>
 
-            <div class="space-y-2.5">
-              ${unified
-                .map((item) => {
-                  if (item.streamType === 'gcal_event') {
-                    const isWifeCal = (item.calendar || '').toLowerCase().includes('wife') || (item.calendar || '').toLowerCase().includes('regla');
-                    return `
-                      <div class="p-3.5 rounded-xl lh-elevated flex items-center justify-between gap-3 ${item.isMuted ? 'opacity-60' : ''}">
-                        <div class="min-w-0">
-                          <div class="flex items-center gap-2 text-xs flex-wrap">
-                            <span class="font-mono-code font-semibold" style="color: var(--secondary-accent);">${escapeHtml(item.startTime)} – ${escapeHtml(item.endTime)}</span>
-                            ${item.dateStr && state.selectedDayOffset === 2 ? `<span class="text-[10px] font-mono-code px-2 py-0.5 rounded lh-surface lh-text-main">${escapeHtml(item.dateStr)}</span>` : ''}
-                            <span class="text-[10px] px-2 py-0.5 rounded-full lh-badge-sec font-semibold">${escapeHtml(item.calendar || 'Calendar Anchor')}</span>
-                            ${item.isMuted ? '<span class="text-[10px] px-2 py-0.5 rounded-full lh-badge">Muted by Fog Filter</span>' : ''}
-                          </div>
-                          <p class="font-semibold text-sm lh-text-main mt-1">${escapeHtml(item.title)}</p>
-                          ${item.location ? `<p class="text-xs lh-text-sec truncate">📍 ${escapeHtml(item.location)}</p>` : ''}
-                        </div>
+            <!-- LIVE CALENDAR STATUS BANNER WHEN NO GCAL EVENTS ARE IN THIS VIEW -->
+            ${
+              calItems.length === 0
+                ? `<div class="p-3 rounded-xl lh-elevated flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div class="flex items-center gap-2 lh-text-sec">
+                      <i data-lucide="calendar" class="w-4 h-4 shrink-0" style="color: var(--secondary-accent);"></i>
+                      <span>
                         ${
-                          isWifeCal && !item.isMuted
-                            ? `<button onclick="window.Lighthouse.quickMuteEventTitle('${escapeHtml(item.title).replace(/'/g, "\\'")}')" class="px-2.5 py-1 rounded-lg lh-surface text-[10px] font-semibold lh-text-sec hover:lh-text-main shrink-0" title="Mute reminders like this">
-                                Mute
-                              </button>`
-                            : ''
+                          isLiveSynced
+                            ? `No Google Calendar events on the books for ${selOffset === 0 ? formatShortDate(0) : selOffset === 1 ? formatShortDate(1) : 'the next 2 weeks'}.`
+                            : 'Google Calendar is not synced yet — connect GCal to pull your real schedule.'
                         }
-                      </div>
-                    `;
-                  }
-
-                  if (item.streamType === 'workout_event') {
-                    return `
-                      <div class="p-3.5 rounded-xl lh-surface border-l-4 flex items-center justify-between gap-3 ${item.completed ? 'opacity-60' : ''}" style="border-left-color: var(--success-accent);">
-                        <div class="flex items-center gap-3 min-w-0">
-                          <button onclick="window.Lighthouse.toggleWorkoutCompleted('${item.id}')"
-                            class="w-6 h-6 rounded-lg flex items-center justify-center border lh-border shrink-0"
-                            style="${item.completed ? 'background-color: var(--success-accent); color: var(--accent-contrast);' : ''}">
-                            ${item.completed ? '<i data-lucide="check" class="w-4 h-4"></i>' : ''}
-                          </button>
-                          <div class="min-w-0">
-                            <div class="flex items-center gap-2 flex-wrap">
-                              <span class="font-mono-code text-xs font-semibold" style="color: var(--success-accent);">${escapeHtml(item.startTime)}</span>
-                              <span class="text-xs lh-text-muted">${item.durationMins}m</span>
-                              <span class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full lh-badge-success font-bold">
-                                🏋️ ${escapeHtml(item.modality)}
-                              </span>
-                              ${item.computedOffset >= 2 ? `<span class="text-[10px] font-mono-code lh-text-sec">${escapeHtml(item.date)}</span>` : ''}
-                            </div>
-                            <p class="text-sm font-bold lh-text-main mt-0.5 ${item.completed ? 'line-through lh-text-muted' : ''}">${escapeHtml(item.title)}</p>
-                            ${item.videoOrRoute || item.notes ? `<p class="text-xs lh-text-sec truncate">${escapeHtml(item.videoOrRoute || '')} ${item.notes ? '• ' + escapeHtml(item.notes) : ''}</p>` : ''}
-                          </div>
-                        </div>
-                        <button onclick="window.Lighthouse.setTab('workouts')" class="px-2.5 py-1 rounded-lg lh-elevated text-[11px] font-semibold lh-text-sec hover:lh-text-main shrink-0">
-                          Edit
-                        </button>
-                      </div>
-                    `;
-                  }
-
-                  return `
-                    <div class="p-3.5 rounded-xl lh-surface flex items-center justify-between gap-3 ${item.completed ? 'opacity-55' : ''}">
-                      <div class="flex items-center gap-3 min-w-0">
-                        <button onclick="window.Lighthouse.togglePlanBlock('${item.id}')"
-                          class="w-6 h-6 rounded-lg flex items-center justify-center border lh-border shrink-0"
-                          style="${item.completed ? 'background-color: var(--success-accent); color: var(--accent-contrast);' : ''}">
-                          ${item.completed ? '<i data-lucide="check" class="w-4 h-4"></i>' : ''}
-                        </button>
-                        <div class="min-w-0">
-                          <div class="flex items-center gap-2">
-                            <span class="font-mono-code text-xs font-semibold" style="color: var(--accent-primary);">${escapeHtml(item.startTime)}</span>
-                            <span class="text-xs lh-text-muted">${item.durationMins}m</span>
-                            <span class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full lh-badge font-semibold">${escapeHtml(item.category)}</span>
-                          </div>
-                          <p class="text-sm font-medium lh-text-main mt-0.5 ${item.completed ? 'line-through lh-text-muted' : ''}">${escapeHtml(item.title)}</p>
-                        </div>
-                      </div>
-                      ${
-                        !state.planLocked
-                          ? `<button onclick="window.Lighthouse.deletePlanBlock('${item.id}')" class="p-1.5 rounded-lg lh-text-muted hover:lh-text-main"><i data-lucide="trash-2" class="w-4 h-4"></i></button>`
-                          : ''
-                      }
+                      </span>
                     </div>
-                  `;
-                })
-                .join('')}
+                    <button onclick="window.Lighthouse.openGcalModal()" class="px-2.5 py-1 rounded-lg lh-btn-soft text-[11px] font-semibold shrink-0">
+                      ${isLiveSynced ? 'Refresh GCal' : 'Sync GCal Now'}
+                    </button>
+                  </div>`
+                : ''
+            }
+
+            <div class="space-y-2.5">
+              ${
+                unified.length === 0
+                  ? `<p class="text-xs lh-text-sec py-6 text-center">No scheduled blocks, workouts, or calendar events in this view yet.</p>`
+                  : unified
+                      .map((item) => {
+                        if (item.streamType === 'gcal_event') {
+                          const isWifeCal = (item.calendar || '').toLowerCase().includes('wife') || (item.calendar || '').toLowerCase().includes('regla');
+                          return `
+                            <div class="p-3.5 rounded-xl lh-elevated flex items-center justify-between gap-3 ${item.isMuted ? 'opacity-60' : ''}">
+                              <div class="min-w-0">
+                                <div class="flex items-center gap-2 text-xs flex-wrap">
+                                  <span class="font-mono-code font-semibold" style="color: var(--secondary-accent);">${escapeHtml(item.startTime)} – ${escapeHtml(item.endTime)}</span>
+                                  ${item.dateStr && selOffset === 2 ? `<span class="text-[10px] font-mono-code px-2 py-0.5 rounded lh-surface lh-text-main">${escapeHtml(formatIsoToShortLabel(item.dateStr))}</span>` : ''}
+                                  <span class="text-[10px] px-2 py-0.5 rounded-full lh-badge-sec font-semibold">${escapeHtml(item.calendar || 'Calendar Anchor')}</span>
+                                  ${item.isMuted ? '<span class="text-[10px] px-2 py-0.5 rounded-full lh-badge">Muted by Fog Filter</span>' : ''}
+                                </div>
+                                <p class="font-semibold text-sm lh-text-main mt-1">${escapeHtml(item.title)}</p>
+                                ${item.location ? `<p class="text-xs lh-text-sec truncate">📍 ${escapeHtml(item.location)}</p>` : ''}
+                              </div>
+                              ${
+                                isWifeCal && !item.isMuted
+                                  ? `<button onclick="window.Lighthouse.quickMuteEventTitle('${escapeHtml(item.title).replace(/'/g, "\\'")}')" class="px-2.5 py-1 rounded-lg lh-surface text-[10px] font-semibold lh-text-sec hover:lh-text-main shrink-0" title="Mute reminders like this">
+                                      Mute
+                                    </button>`
+                                  : ''
+                              }
+                            </div>
+                          `;
+                        }
+
+                        if (item.streamType === 'workout_event') {
+                          return `
+                            <div class="p-3.5 rounded-xl lh-surface border-l-4 flex items-center justify-between gap-3 ${item.completed ? 'opacity-60' : ''}" style="border-left-color: var(--success-accent);">
+                              <div class="flex items-center gap-3 min-w-0">
+                                <button onclick="window.Lighthouse.toggleWorkoutCompleted('${item.id}')"
+                                  class="w-6 h-6 rounded-lg flex items-center justify-center border lh-border shrink-0"
+                                  style="${item.completed ? 'background-color: var(--success-accent); color: var(--accent-contrast);' : ''}">
+                                  ${item.completed ? '<i data-lucide="check" class="w-4 h-4"></i>' : ''}
+                                </button>
+                                <div class="min-w-0">
+                                  <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="font-mono-code text-xs font-semibold" style="color: var(--success-accent);">${escapeHtml(item.startTime)}</span>
+                                    <span class="text-xs lh-text-muted">${item.durationMins}m</span>
+                                    <span class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full lh-badge-success font-bold">
+                                      🏋️ ${escapeHtml(item.modality)}
+                                    </span>
+                                    ${item.computedOffset >= 2 ? `<span class="text-[10px] font-mono-code px-2 py-0.5 rounded lh-elevated lh-text-main">${escapeHtml(formatIsoToShortLabel(item.date))}</span>` : ''}
+                                  </div>
+                                  <p class="text-sm font-bold lh-text-main mt-0.5 ${item.completed ? 'line-through lh-text-muted' : ''}">${escapeHtml(item.title)}</p>
+                                  ${item.videoOrRoute || item.notes ? `<p class="text-xs lh-text-sec truncate">${escapeHtml(item.videoOrRoute || '')} ${item.notes ? '• ' + escapeHtml(item.notes) : ''}</p>` : ''}
+                                </div>
+                              </div>
+                              <button onclick="window.Lighthouse.setTab('workouts')" class="px-2.5 py-1 rounded-lg lh-elevated text-[11px] font-semibold lh-text-sec hover:lh-text-main shrink-0">
+                                Edit
+                              </button>
+                            </div>
+                          `;
+                        }
+
+                        return `
+                          <div class="p-3.5 rounded-xl lh-surface flex items-center justify-between gap-3 ${item.completed ? 'opacity-55' : ''}">
+                            <div class="flex items-center gap-3 min-w-0">
+                              <button onclick="window.Lighthouse.togglePlanBlock('${item.id}')"
+                                class="w-6 h-6 rounded-lg flex items-center justify-center border lh-border shrink-0"
+                                style="${item.completed ? 'background-color: var(--success-accent); color: var(--accent-contrast);' : ''}">
+                                ${item.completed ? '<i data-lucide="check" class="w-4 h-4"></i>' : ''}
+                              </button>
+                              <div class="min-w-0">
+                                <div class="flex items-center gap-2">
+                                  <span class="font-mono-code text-xs font-semibold" style="color: var(--accent-primary);">${escapeHtml(item.startTime)}</span>
+                                  <span class="text-xs lh-text-muted">${item.durationMins}m</span>
+                                  <span class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full lh-badge font-semibold">${escapeHtml(item.category)}</span>
+                                </div>
+                                <p class="text-sm font-medium lh-text-main mt-0.5 ${item.completed ? 'line-through lh-text-muted' : ''}">${escapeHtml(item.title)}</p>
+                              </div>
+                            </div>
+                            ${
+                              !state.planLocked
+                                ? `<button onclick="window.Lighthouse.deletePlanBlock('${item.id}')" class="p-1.5 rounded-lg lh-text-muted hover:lh-text-main"><i data-lucide="trash-2" class="w-4 h-4"></i></button>`
+                                : ''
+                            }
+                          </div>
+                        `;
+                      })
+                      .join('')
+              }
             </div>
 
             <!-- QUICK ADD BLOCK -->
@@ -315,7 +396,7 @@
 
               <div class="sm:col-span-3 space-y-2">
                 <label class="text-xs font-semibold lh-text-sec block">3. Date</label>
-                <input id="wk-date" type="date" value="${TODAY_ISO}"
+                <input id="wk-date" type="date" value="${getLocalIsoDate(0)}"
                   class="w-full px-3 py-2.5 rounded-xl lh-input font-mono-code" />
               </div>
             </div>
