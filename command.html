@@ -1,0 +1,1097 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Lighthouse — Charted Course, Fleet Dock &amp; Settings</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Real QR Code Generator & HTML2PDF Bundle CDNs -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Shared Lighthouse Styles -->
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body class="min-h-screen flex flex-col md:flex-row">
+
+  <!-- REAL SCANNABLE QR CODE MODAL (FLEET DOCK) -->
+  <div id="qr-modal" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="lh-surface rounded-2xl p-5 sm:p-6 max-w-md w-full text-center space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between border-b lh-border pb-3">
+        <div class="text-left">
+          <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full lh-badge">Scannable App QR</span>
+          <h3 id="qr-modal-title" class="font-bold text-base lh-text-main mt-1"></h3>
+        </div>
+        <button onclick="window.Lighthouse.closeQrModal()" class="p-2 rounded-xl lh-elevated lh-text-sec">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div id="qr-svg-box" class="flex justify-center py-2"></div>
+
+      <div class="text-left space-y-1.5">
+        <label class="text-[11px] font-semibold lh-text-sec block">Live URL (Edit to regenerate QR in real time):</label>
+        <div class="flex items-center gap-1.5">
+          <input id="qr-modal-url-input" type="text"
+            oninput="window.Lighthouse.updateQrModalUrl(this.value)"
+            class="flex-1 px-3 py-2 rounded-xl lh-input font-mono-code text-xs" />
+          <button onclick="window.Lighthouse.copyQrModalUrl()" class="px-3 py-2 rounded-xl lh-btn-soft text-xs shrink-0 flex items-center gap-1">
+            <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+            <span>Copy</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-3 gap-2 pt-1">
+        <a id="qr-modal-open-link" href="#" target="_blank" rel="noopener noreferrer"
+          class="py-2.5 px-3 rounded-xl lh-btn-soft text-xs flex items-center justify-center gap-1.5 font-semibold">
+          <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+          <span>Open Site</span>
+        </a>
+        <button onclick="window.Lighthouse.downloadQrSvg()" class="py-2.5 px-3 rounded-xl lh-btn-primary text-xs flex items-center justify-center gap-1.5">
+          <i data-lucide="download" class="w-3.5 h-3.5"></i>
+          <span>Save SVG</span>
+        </button>
+        <button onclick="window.Lighthouse.closeQrModal()" class="py-2.5 px-3 rounded-xl lh-elevated lh-text-main text-xs font-semibold">
+          Done
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import {
+      COLOR_THEMES,
+      WORKOUT_MODALITIES,
+      INITIAL_STATE,
+      getLocalIsoDate
+    } from './data.js';
+    import {
+      state,
+      saveState,
+      renderApp,
+      showToast,
+      escapeHtml,
+      ensureDailyLog,
+      initLighthousePage
+    } from './core.js';
+
+    let activeQrSiteId = null;
+
+    // =========================================================================
+    // STATION 7: CHARTED COURSE (DAILY BACKTRACK LEDGER + WOOP GOAL ENGINE)
+    // =========================================================================
+    function formatReadableDateLabel(dateStr) {
+      if (!dateStr) return 'Today';
+      if (dateStr === getLocalIsoDate(0)) return `Today (${dateStr})`;
+      if (dateStr === getLocalIsoDate(-1)) return `Yesterday (${dateStr})`;
+      if (dateStr === getLocalIsoDate(1)) return `Tomorrow (${dateStr})`;
+      const [y, m, d] = dateStr.split('-').map(Number);
+      const dt = new Date(y, m - 1, d);
+      return dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    }
+
+    function renderGoalsView() {
+      const activeGoals = (state.goals || []).filter((g) => g.status === 'active');
+      const maxGoals = Number(state.settings.maxActiveGoals) || 3;
+
+      const selDate = state.backtrackDate || getLocalIsoDate(0);
+      const dayLog = ensureDailyLog(selDate);
+      const dayWorkouts = (state.workouts || []).filter((w) => w.date === selDate);
+
+      // Build 7-day visual strip (6 days back + today)
+      const recent7Days = Array.from({ length: 7 }, (_, idx) => {
+        const dStr = getLocalIsoDate(idx - 6);
+        const [, mm, dd] = dStr.split('-');
+        const dt = new Date(Number(dStr.slice(0, 4)), Number(mm) - 1, Number(dd));
+        const dayName = dt.toLocaleDateString('en-US', { weekday: 'short' });
+        const h = state.dailyHistory?.[dStr] || {};
+        const wks = (state.workouts || []).filter((w) => w.date === dStr && w.completed);
+        const todosDone = (h.todos || []).filter((t) => t.completed).length;
+        return {
+          dateStr: dStr,
+          dayName,
+          dayNum: dd,
+          hasWorkout: wks.length > 0,
+          hasPrayer: Boolean(h.prayerDone),
+          hasNight: Boolean(h.nightDone),
+          todosDone
+        };
+      });
+
+      return `
+        <div class="space-y-6">
+          <!-- 1. DAILY ACCOMPLISHMENT & BACKTRACK LEDGER -->
+          <div class="lh-surface rounded-2xl p-4 sm:p-6 space-y-5 border-l-4" style="border-left-color: var(--success-accent);">
+            <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b lh-border">
+              <div>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full lh-badge-success">
+                    Daily Accomplishment &amp; Backtrack Ledger
+                  </span>
+                  <span class="text-xs font-mono-code lh-text-sec">${escapeHtml(formatReadableDateLabel(selDate))}</span>
+                </div>
+                <h3 class="text-lg sm:text-xl font-bold lh-text-main mt-1">
+                  Everything Done on ${escapeHtml(formatReadableDateLabel(selDate))}
+                </h3>
+                <p class="text-xs lh-text-sec">
+                  Backtrack to any day to review or check off your To-Dos, Workouts, and whole-item Prayer &amp; Night Watch completions.
+                </p>
+              </div>
+
+              <!-- Date Stepper & Picker Controls -->
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <button onclick="window.Lighthouse.stepBacktrackDate(-1)"
+                  class="px-3 py-2 rounded-xl lh-elevated lh-text-main text-xs font-bold flex items-center gap-1 hover:opacity-85">
+                  <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                  <span>Prev Day</span>
+                </button>
+                <input type="date" value="${escapeHtml(selDate)}"
+                  onchange="window.Lighthouse.setBacktrackDate(this.value)"
+                  class="px-3 py-2 rounded-xl lh-input font-mono-code text-xs" />
+                <button onclick="window.Lighthouse.stepBacktrackDate(1)"
+                  class="px-3 py-2 rounded-xl lh-elevated lh-text-main text-xs font-bold flex items-center gap-1 hover:opacity-85">
+                  <span>Next Day</span>
+                  <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                </button>
+                ${
+                  selDate !== getLocalIsoDate(0)
+                    ? `<button onclick="window.Lighthouse.setBacktrackDate('${getLocalIsoDate(0)}')"
+                        class="px-3 py-2 rounded-xl lh-btn-primary text-xs font-bold">
+                        Today
+                      </button>`
+                    : ''
+                }
+              </div>
+            </div>
+
+            <!-- 7-DAY QUICK-TAP BACKTRACK STRIP -->
+            <div class="grid grid-cols-7 gap-1.5">
+              ${recent7Days
+                .map((d) => {
+                  const isSel = d.dateStr === selDate;
+                  return `
+                    <button onclick="window.Lighthouse.setBacktrackDate('${d.dateStr}')"
+                      class="p-2 rounded-xl text-center transition flex flex-col items-center justify-between gap-1 ${
+                        isSel ? 'lh-btn-primary shadow-md' : 'lh-elevated lh-text-main hover:opacity-90'
+                      }">
+                      <span class="text-[10px] font-semibold uppercase opacity-80">${escapeHtml(d.dayName)}</span>
+                      <span class="text-xs sm:text-sm font-bold font-mono-code">${escapeHtml(d.dayNum)}</span>
+                      <div class="flex items-center gap-1 mt-0.5">
+                        <span class="w-1.5 h-1.5 rounded-full ${d.hasWorkout ? 'bg-emerald-400' : 'bg-white/20'}" title="Workout"></span>
+                        <span class="w-1.5 h-1.5 rounded-full ${d.hasPrayer ? 'bg-amber-400' : 'bg-white/20'}" title="Prayer"></span>
+                        <span class="w-1.5 h-1.5 rounded-full ${d.hasNight ? 'bg-sky-400' : 'bg-white/20'}" title="Night Watch"></span>
+                      </div>
+                    </button>
+                  `;
+                })
+                .join('')}
+            </div>
+
+            <!-- WHOLE-ITEM MACRO CHECKBOXES -->
+            <div class="space-y-2">
+              <span class="text-xs font-bold uppercase tracking-wider lh-text-sec block">
+                1. Whole-Routine Daily Check-Offs (One Tap — No Micro-Pieces)
+              </span>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <button onclick="window.Lighthouse.toggleDailyMacro('${selDate}', 'prayerDone')"
+                  class="p-3.5 rounded-2xl text-left transition flex items-center justify-between gap-3 ${
+                    dayLog.prayerDone ? 'lh-badge-success' : 'lh-elevated lh-text-main'
+                  }">
+                  <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-7 h-7 rounded-xl border lh-border flex items-center justify-center shrink-0"
+                      style="${dayLog.prayerDone ? 'background-color: var(--success-accent); color: var(--accent-contrast);' : ''}">
+                      ${dayLog.prayerDone ? '<i data-lucide="check" class="w-4 h-4"></i>' : '<i data-lucide="heart" class="w-4 h-4"></i>'}
+                    </div>
+                    <div class="min-w-0">
+                      <p class="font-bold text-sm truncate">Prayer Sanctuary</p>
+                      <p class="text-[11px] opacity-80 truncate">${dayLog.prayerDone ? 'Completed for this day' : 'Tap to mark whole item done'}</p>
+                    </div>
+                  </div>
+                </button>
+
+                <button onclick="window.Lighthouse.toggleDailyMacro('${selDate}', 'nightDone')"
+                  class="p-3.5 rounded-2xl text-left transition flex items-center justify-between gap-3 ${
+                    dayLog.nightDone ? 'lh-badge-success' : 'lh-elevated lh-text-main'
+                  }">
+                  <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-7 h-7 rounded-xl border lh-border flex items-center justify-center shrink-0"
+                      style="${dayLog.nightDone ? 'background-color: var(--success-accent); color: var(--accent-contrast);' : ''}">
+                      ${dayLog.nightDone ? '<i data-lucide="check" class="w-4 h-4"></i>' : '<i data-lucide="moon" class="w-4 h-4"></i>'}
+                    </div>
+                    <div class="min-w-0">
+                      <p class="font-bold text-sm truncate">Night Watch &amp; Log</p>
+                      <p class="text-[11px] opacity-80 truncate">${dayLog.nightDone ? 'Completed for this day' : 'Tap to mark whole item done'}</p>
+                    </div>
+                  </div>
+                </button>
+
+                <button onclick="window.Lighthouse.toggleDailyMacro('${selDate}', 'morningDone')"
+                  class="p-3.5 rounded-2xl text-left transition flex items-center justify-between gap-3 ${
+                    dayLog.morningDone ? 'lh-badge-success' : 'lh-elevated lh-text-main'
+                  }">
+                  <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-7 h-7 rounded-xl border lh-border flex items-center justify-center shrink-0"
+                      style="${dayLog.morningDone ? 'background-color: var(--success-accent); color: var(--accent-contrast);' : ''}">
+                      ${dayLog.morningDone ? '<i data-lucide="check" class="w-4 h-4"></i>' : '<i data-lucide="sun" class="w-4 h-4"></i>'}
+                    </div>
+                    <div class="min-w-0">
+                      <p class="font-bold text-sm truncate">Morning Watch</p>
+                      <p class="text-[11px] opacity-80 truncate">${dayLog.morningDone ? 'Completed for this day' : 'Tap to mark whole item done'}</p>
+                    </div>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            <!-- TWO-COLUMN SPLIT: WORKOUTS + TO-DOS ON SELECTED DATE -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+              <!-- LEFT: WORKOUTS -->
+              <div class="p-4 rounded-2xl lh-elevated space-y-3 flex flex-col justify-between">
+                <div class="space-y-2.5">
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5" style="color: var(--success-accent);">
+                      <i data-lucide="dumbbell" class="w-4 h-4"></i>
+                      <span>2. Workouts (${dayWorkouts.length})</span>
+                    </span>
+                    <button onclick="window.Lighthouse.setTab('workouts')" class="text-[11px] font-semibold lh-text-sec hover:lh-text-main">
+                      Open Full Planner →
+                    </button>
+                  </div>
+
+                  ${
+                    dayWorkouts.length === 0
+                      ? `<p class="text-xs lh-text-sec py-2">No workouts logged for ${escapeHtml(selDate)} yet. Quick-add one below:</p>`
+                      : `<div class="space-y-2">
+                          ${dayWorkouts
+                            .map(
+                              (w) => `
+                              <div class="p-3 rounded-xl lh-surface flex items-center justify-between gap-2">
+                                <div class="flex items-center gap-2.5 min-w-0">
+                                  <button onclick="window.Lighthouse.toggleWorkoutCompleted('${w.id}')"
+                                    class="w-5 h-5 rounded-md border lh-border flex items-center justify-center shrink-0"
+                                    style="${w.completed ? 'background-color: var(--success-accent); color: var(--accent-contrast);' : ''}">
+                                    ${w.completed ? '<i data-lucide="check" class="w-3.5 h-3.5"></i>' : ''}
+                                  </button>
+                                  <div class="min-w-0">
+                                    <div class="flex items-center gap-1.5">
+                                      <span class="text-[10px] font-bold px-2 py-0.5 rounded-full lh-badge-success">${escapeHtml(w.modality)}</span>
+                                      <span class="text-[11px] font-mono-code lh-text-sec">${w.durationMins}m</span>
+                                    </div>
+                                    <p class="text-xs sm:text-sm font-semibold lh-text-main truncate mt-0.5 ${w.completed ? 'line-through lh-text-muted' : ''}">
+                                      ${escapeHtml(w.title)}
+                                    </p>
+                                  </div>
+                                </div>
+                                <button onclick="window.Lighthouse.deleteWorkout('${w.id}')" class="p-1 lh-text-muted hover:lh-text-main">
+                                  <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                </button>
+                              </div>
+                            `
+                            )
+                            .join('')}
+                        </div>`
+                  }
+                </div>
+
+                <div class="pt-2.5 border-t lh-border space-y-2">
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <select id="bt-wk-modality"
+                      onchange="window.Lighthouse.handleWorkoutModalityChange('bt-wk-modality', 'bt-wk-custom')"
+                      class="px-2.5 py-2 rounded-xl lh-input text-xs">
+                      ${WORKOUT_MODALITIES.map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('')}
+                    </select>
+                    <input id="bt-wk-title" type="text"
+                      onkeydown="if(event.key==='Enter') window.Lighthouse.quickAddBacktrackWorkout('${selDate}')"
+                      placeholder="Session title / focus (e.g. 45m Spin)..."
+                      class="px-3 py-2 rounded-xl lh-input text-xs" />
+                  </div>
+                  <input id="bt-wk-custom" type="text" placeholder="Type custom workout activity..." class="hidden w-full px-3 py-2 rounded-xl lh-input text-xs" />
+                  <button onclick="window.Lighthouse.quickAddBacktrackWorkout('${selDate}')"
+                    class="w-full py-2 rounded-xl lh-btn-soft text-xs font-bold">
+                    + Log Completed Workout on ${escapeHtml(selDate)}
+                  </button>
+                </div>
+              </div>
+
+              <!-- RIGHT: TO-DOS -->
+              <div class="p-4 rounded-2xl lh-elevated space-y-3 flex flex-col justify-between">
+                <div class="space-y-2.5">
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5" style="color: var(--accent-primary);">
+                      <i data-lucide="check-square" class="w-4 h-4"></i>
+                      <span>3. To-Dos &amp; Tasks (${(dayLog.todos || []).length})</span>
+                    </span>
+                    <span class="text-[11px] font-mono-code lh-text-sec">
+                      ${(dayLog.todos || []).filter((t) => t.completed).length} Done
+                    </span>
+                  </div>
+
+                  ${
+                    (dayLog.todos || []).length === 0
+                      ? `<p class="text-xs lh-text-sec py-2">No tasks recorded for ${escapeHtml(selDate)} yet. Add any completed to-do below:</p>`
+                      : `<div class="space-y-2">
+                          ${(dayLog.todos || [])
+                            .map(
+                              (td) => `
+                              <div class="p-3 rounded-xl lh-surface flex items-center justify-between gap-2">
+                                <div class="flex items-center gap-2.5 min-w-0">
+                                  <button onclick="window.Lighthouse.toggleBacktrackTodo('${selDate}', '${td.id}')"
+                                    class="w-5 h-5 rounded-md border lh-border flex items-center justify-center shrink-0"
+                                    style="${td.completed ? 'background-color: var(--success-accent); color: var(--accent-contrast);' : ''}">
+                                    ${td.completed ? '<i data-lucide="check" class="w-3.5 h-3.5"></i>' : ''}
+                                  </button>
+                                  <span class="text-xs sm:text-sm font-medium lh-text-main ${td.completed ? 'line-through lh-text-muted' : ''}">
+                                    ${escapeHtml(td.text)}
+                                  </span>
+                                </div>
+                                <button onclick="window.Lighthouse.deleteBacktrackTodo('${selDate}', '${td.id}')"
+                                  class="p-1 lh-text-muted hover:lh-text-main">
+                                  <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                </button>
+                              </div>
+                            `
+                            )
+                            .join('')}
+                        </div>`
+                  }
+                </div>
+
+                <div class="pt-2.5 border-t lh-border flex items-center gap-2">
+                  <input id="bt-todo-input" type="text"
+                    onkeydown="if(event.key==='Enter') window.Lighthouse.addBacktrackTodo('${selDate}')"
+                    placeholder="Add to-do or accomplishment for ${escapeHtml(selDate)}..."
+                    class="flex-1 px-3 py-2 rounded-xl lh-input text-xs" />
+                  <button onclick="window.Lighthouse.addBacktrackTodo('${selDate}')"
+                    class="py-2 px-3.5 rounded-xl lh-btn-primary text-xs font-bold shrink-0">
+                    + Add
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- EXPLAINER BANNER: WHAT IS CHARTED COURSE? -->
+          <div class="lh-surface rounded-2xl p-4 sm:p-6 space-y-3 border-l-4" style="border-left-color: var(--accent-primary);">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <span class="text-[11px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full lh-badge">
+                Psychology &amp; Neuroscience Goal Engine
+              </span>
+              <span class="text-xs font-mono-code lh-text-sec">
+                Active Focus Beacons: ${activeGoals.length} / ${maxGoals} Max WIP Limit
+              </span>
+            </div>
+            <h3 class="text-lg sm:text-xl font-bold lh-text-main">Charted Course — Why This Station Exists</h3>
+            <p class="text-xs sm:text-sm lh-text-sec leading-relaxed">
+              Most goal lists fail because of <strong>dopamine dilution</strong> (chasing too many targets at once) and <strong>in-the-moment negotiation</strong> when tired. Charted Course locks your focus onto a maximum of <strong>${maxGoals} Active Beacons</strong> using <strong>WOOP Mental Contrasting</strong> (Wish, Outcome, Obstacle, Plan) and <strong>Gollwitzer’s IF–THEN Implementation Intentions</strong> so your response to friction is pre-decided.
+            </p>
+          </div>
+
+          <!-- ANTERIOR MID-CINGULATE CORTEX (aMCC) DAILY FRICTION & TENACITY BUILDER -->
+          <div class="lh-surface rounded-2xl p-4 sm:p-5 space-y-3">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full lh-badge-sec">
+                  Neuroplasticity Tenacity Hub
+                </span>
+                <h4 class="font-bold text-base lh-text-main mt-1">
+                  Anterior Mid-Cingulate Cortex (aMCC) Daily Friction Score
+                </h4>
+                <p class="text-xs lh-text-sec">
+                  Neuroscience shows the aMCC physically grows when you voluntarily lean into one healthy micro-challenge you didn’t feel like doing today.
+                </p>
+              </div>
+              <div class="text-right">
+                <span class="text-2xl font-bold font-mono-code" style="color: var(--accent-primary);">${state.dailyAmccScore || 7}/10</span>
+                <span class="text-[11px] lh-text-sec block">Today’s Friction Load</span>
+              </div>
+            </div>
+
+            <input type="range" min="1" max="10" value="${state.dailyAmccScore || 7}"
+              oninput="window.Lighthouse.setAmccScore(this.value)"
+              class="w-full cursor-pointer" />
+
+            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
+              <input id="amcc-win-note" type="text"
+                value="${escapeHtml(state.amccNoteDraft || '')}"
+                oninput="window.Lighthouse.updateAmccNote(this.value)"
+                placeholder="Name 1 hard thing you did today when you didn't feel like it (e.g., 5:30 AM feet on floor, cold rinse)..."
+                class="flex-1 px-3.5 py-2 rounded-xl lh-input" />
+              <button onclick="window.Lighthouse.logAmccMicroWin()"
+                class="py-2.5 px-4 rounded-xl lh-btn-soft text-xs font-bold shrink-0">
+                + Log aMCC Tenacity Rep
+              </button>
+            </div>
+          </div>
+
+          <!-- ACTIVE WOOP + IF-THEN GOAL BEACONS -->
+          <div class="space-y-4">
+            <div class="flex items-center justify-between">
+              <h4 class="text-sm font-bold uppercase tracking-wider lh-text-sec">
+                Active Course Beacons (${activeGoals.length}/${maxGoals})
+              </h4>
+              <span class="text-xs lh-text-sec">Log daily reps or schedule directly onto your 24h Watchtower</span>
+            </div>
+
+            <div class="grid grid-cols-1 gap-4">
+              ${activeGoals
+                .map(
+                  (g) => `
+                  <div class="lh-surface rounded-2xl p-4 sm:p-5 space-y-4">
+                    <div class="flex flex-wrap items-start justify-between gap-3 border-b lh-border pb-3">
+                      <div class="space-y-1">
+                        <span class="text-[11px] font-semibold uppercase tracking-wider" style="color: var(--accent-primary);">
+                          Identity Anchor: ${escapeHtml(g.identityStatement || 'Disciplined Christian Steward')}
+                        </span>
+                        <h4 class="text-base sm:text-lg font-bold lh-text-main">${escapeHtml(g.title)}</h4>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <span class="px-3 py-1 rounded-full text-xs font-bold font-mono-code lh-badge-success">
+                          ${g.streakDays || 1}d Streak • ${g.progressPct || 10}%
+                        </span>
+                      </div>
+                    </div>
+
+                    <div class="w-full h-2 rounded-full lh-elevated overflow-hidden">
+                      <div class="h-full rounded-full transition-all duration-300"
+                        style="width: ${Math.min(100, Math.max(5, g.progressPct || 10))}%; background-color: var(--accent-primary);"></div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                      <div class="p-3 rounded-xl lh-elevated space-y-1">
+                        <span class="font-bold uppercase tracking-wider lh-text-sec block text-[10px]">1. Wish &amp; Best Outcome</span>
+                        <p class="lh-text-main font-medium">${escapeHtml(g.wish || '')}</p>
+                        ${g.outcome ? `<p class="lh-text-sec text-[11px] mt-1">${escapeHtml(g.outcome)}</p>` : ''}
+                      </div>
+
+                      <div class="p-3 rounded-xl lh-elevated space-y-1">
+                        <span class="font-bold uppercase tracking-wider lh-text-sec block text-[10px]">2. Primary Internal Obstacle</span>
+                        <p class="lh-text-main">${escapeHtml(g.obstacle || '')}</p>
+                      </div>
+
+                      <div class="p-3 rounded-xl lh-badge space-y-1">
+                        <span class="font-bold uppercase tracking-wider block text-[10px]">3. Gollwitzer IF–THEN Plan</span>
+                        <p class="font-semibold leading-relaxed">${escapeHtml(g.ifThenPlan || '')}</p>
+                      </div>
+                    </div>
+
+                    <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t lh-border">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <button onclick="window.Lighthouse.logGoalRep('${g.id}')"
+                          class="py-2 px-4 rounded-xl lh-btn-primary text-xs font-bold flex items-center gap-1.5">
+                          <i data-lucide="check-circle-2" class="w-4 h-4"></i>
+                          <span>+1 Rep Completed Today</span>
+                        </button>
+                        <button onclick="window.Lighthouse.pushGoalToWatch('${g.id}')"
+                          class="py-2 px-3.5 rounded-xl lh-btn-soft text-xs font-semibold flex items-center gap-1.5">
+                          <i data-lucide="calendar-plus" class="w-3.5 h-3.5"></i>
+                          <span>+ Block Time on 24h Watch</span>
+                        </button>
+                      </div>
+                      <button onclick="window.Lighthouse.deleteGoal('${g.id}')"
+                        class="p-2 rounded-xl lh-elevated lh-text-muted hover:lh-text-main" title="Remove Goal Beacon">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                      </button>
+                    </div>
+                  </div>
+                `
+                )
+                .join('')}
+            </div>
+          </div>
+
+          <!-- CHART NEW WOOP + IF-THEN GOAL BEACON FORM -->
+          <div class="lh-surface rounded-2xl p-4 sm:p-6 space-y-4">
+            <div class="border-b lh-border pb-2.5">
+              <h4 class="font-bold text-base lh-text-main">+ Chart New WOOP &amp; IF–THEN Goal Beacon</h4>
+              <p class="text-xs lh-text-sec">Define the identity, the measurable target, the real-world obstacle, and your automatic IF–THEN response.</p>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <input id="goal-title" type="text" placeholder="Goal Beacon Title (e.g. 30-Min Wake-to-Workout Ramp)..." class="px-3.5 py-2.5 rounded-xl lh-input" />
+              <input id="goal-identity" type="text" placeholder="Identity ('I am a steward who...')" class="px-3.5 py-2.5 rounded-xl lh-input" />
+              <input id="goal-wish" type="text" placeholder="Measurable Wish (What specifically will you do?)..." class="px-3.5 py-2.5 rounded-xl lh-input" />
+              <input id="goal-outcome" type="text" placeholder="Best Outcome (How will this bless your life/family?)..." class="px-3.5 py-2.5 rounded-xl lh-input" />
+            </div>
+            <input id="goal-obstacle" type="text" placeholder="Primary Internal Obstacle (What usually derails you at the critical moment?)..." class="w-full px-3.5 py-2.5 rounded-xl lh-input" />
+            <input id="goal-ifthen" type="text" placeholder="IF–THEN Plan: 'IF [Obstacle occurs], THEN I will immediately [Concrete 2-Minute Action]...'" class="w-full px-3.5 py-2.5 rounded-xl lh-input" />
+            <button onclick="window.Lighthouse.createGoal()" class="px-5 py-2.5 rounded-xl lh-btn-primary text-xs sm:text-sm font-bold">
+              + Save Goal Beacon to Charted Course
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    // =========================================================================
+    // STATION 8: FLEET DOCK (CODED SITES & WEB APPS LAUNCHPAD + LIVE QR)
+    // =========================================================================
+    function generateRealQrSvg(urlText) {
+      const cleanUrl = (urlText || 'https://schuler314.github.io').trim();
+      try {
+        if (typeof window.qrcode === 'function') {
+          const qr = window.qrcode(0, 'M');
+          qr.addData(cleanUrl);
+          qr.make();
+          return qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
+        }
+      } catch {
+        // Fall through to reliable image fallback below
+      }
+      const encoded = encodeURIComponent(cleanUrl);
+      return `<img src="https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=10&data=${encoded}" alt="QR Code for ${escapeHtml(cleanUrl)}" class="w-full h-full object-contain rounded-lg" />`;
+    }
+
+    function renderQrModalGraphicHtml(urlText) {
+      const cleanUrl = (urlText || 'https://schuler314.github.io').trim();
+      const encoded = encodeURIComponent(cleanUrl);
+      const primaryGraphic = generateRealQrSvg(cleanUrl);
+      return `
+        <div class="bg-white p-3.5 rounded-2xl shadow-inner inline-flex flex-col items-center justify-center w-56 h-56 mx-auto">
+          <div class="w-full h-full flex items-center justify-center [&>svg]:w-full [&>svg]:h-full">
+            ${primaryGraphic}
+          </div>
+          <noscript>
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=10&data=${encoded}" alt="QR Code" class="w-48 h-48" />
+          </noscript>
+        </div>
+      `;
+    }
+
+    function renderLaunchpadView() {
+      const sites = state.codedSites || [];
+      return `
+        <div class="space-y-6">
+          <div class="lh-surface rounded-2xl p-4 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-l-4" style="border-left-color: var(--accent-primary);">
+            <div>
+              <span class="text-[11px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full lh-badge">
+                Personal Software Fleet (${sites.length} Deployed Apps)
+              </span>
+              <h3 class="text-lg sm:text-xl font-bold lh-text-main mt-1">Fleet Dock — Coded Sites &amp; Web Apps Directory</h3>
+              <p class="text-xs lh-text-sec">
+                Launch your custom web apps with one tap, scan or share live QR codes to open on another phone/tablet, and jot down next-feature ideas.
+              </p>
+            </div>
+          </div>
+
+          <div class="lh-surface rounded-2xl p-4 sm:p-5 space-y-3">
+            <h4 class="font-bold text-xs uppercase tracking-wider" style="color: var(--accent-primary);">+ Add Coded Web App / Site to Fleet Dock</h4>
+            <div class="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+              <input id="site-title" type="text" placeholder="App Name (e.g., OrbitStation Clock)" class="sm:col-span-3 px-3 py-2.5 rounded-xl lh-input" />
+              <input id="site-url" type="url" placeholder="Live URL (https://schuler314.github.io/...)" class="sm:col-span-4 px-3 py-2.5 rounded-xl lh-input font-mono-code" />
+              <input id="site-tagline" type="text" placeholder="Short description or tech stack..." class="sm:col-span-3 px-3 py-2.5 rounded-xl lh-input" />
+              <button onclick="window.Lighthouse.createCodedSite()" class="sm:col-span-2 py-2.5 px-4 rounded-xl lh-btn-primary text-xs font-bold">
+                + Add Site
+              </button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            ${sites
+              .map(
+                (site) => `
+                <div class="lh-surface rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-4">
+                  <div class="space-y-3">
+                    <div class="flex items-start justify-between gap-2">
+                      <div>
+                        <div class="flex items-center gap-2 flex-wrap">
+                          <span class="text-[10px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full lh-badge">
+                            ${escapeHtml(site.category || 'Web App')}
+                          </span>
+                          <span class="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full lh-badge-success">
+                            ${escapeHtml(site.status || 'Live')}
+                          </span>
+                        </div>
+                        <h4 class="font-bold text-base sm:text-lg lh-text-main mt-1.5">${escapeHtml(site.title)}</h4>
+                      </div>
+
+                      <div class="flex items-center gap-1.5 shrink-0">
+                        <button onclick="window.Lighthouse.openQrModal('${site.id}')"
+                          class="px-2.5 py-1.5 rounded-xl lh-btn-soft text-xs font-bold flex items-center gap-1.5"
+                          title="Show Scannable QR Code">
+                          <i data-lucide="qr-code" class="w-4 h-4"></i>
+                          <span>QR Code</span>
+                        </button>
+                        <button onclick="window.Lighthouse.deleteSite('${site.id}')"
+                          class="p-1.5 rounded-xl lh-elevated lh-text-muted hover:lh-text-main" title="Delete Site">
+                          <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                      </div>
+                    </div>
+
+                    <p class="text-xs lh-text-sec leading-relaxed">${escapeHtml(site.tagline || '')}</p>
+                    <p class="text-[11px] font-mono-code lh-text-sec truncate">${escapeHtml(site.url)}</p>
+
+                    <div class="pt-1 space-y-1">
+                      <label class="text-[10px] font-bold uppercase tracking-wider lh-text-sec block">
+                        Next Feature / Bug Fix Scratchpad:
+                      </label>
+                      <input type="text"
+                        value="${escapeHtml(site.nextTodo || '')}"
+                        oninput="window.Lighthouse.updateSiteTodo('${site.id}', this.value)"
+                        placeholder="Jot next feature idea or tweak..."
+                        class="w-full px-3 py-2 rounded-xl lh-input text-xs" />
+                    </div>
+                  </div>
+
+                  <div class="pt-3 border-t lh-border flex items-center gap-2">
+                    <a href="${escapeHtml(site.url)}" target="_blank" rel="noopener noreferrer"
+                      class="flex-1 py-2.5 px-4 rounded-xl lh-btn-primary text-xs font-bold flex items-center justify-center gap-1.5">
+                      <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+                      <span>Launch App</span>
+                    </a>
+                    <button onclick="window.Lighthouse.openQrModal('${site.id}')"
+                      class="py-2.5 px-3.5 rounded-xl lh-elevated lh-text-main text-xs font-semibold flex items-center gap-1.5">
+                      <i data-lucide="smartphone" class="w-3.5 h-3.5" style="color: var(--accent-primary);"></i>
+                      <span>Scan on Phone</span>
+                    </button>
+                  </div>
+                </div>
+              `
+              )
+              .join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    // =========================================================================
+    // STATION 9: THEMES & FILTERS (4 PALETTES, CIRCADIAN ANCHORS, FOG FILTER)
+    // =========================================================================
+    function renderSettingsView() {
+      const s = state.settings || INITIAL_STATE.settings;
+      const keywords = s.wifeFilterKeywords || [];
+
+      return `
+        <div class="space-y-6">
+          <div class="lh-surface rounded-2xl p-4 sm:p-6 space-y-4">
+            <div>
+              <span class="text-[11px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-full lh-badge">
+                60–30–10 Color Theory System
+              </span>
+              <h3 class="text-lg sm:text-xl font-bold lh-text-main mt-1">1. Appearance &amp; Color Theme</h3>
+              <p class="text-xs lh-text-sec">
+                Choose from 4 balanced color palettes engineered for high legibility and low visual fatigue.
+              </p>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              ${COLOR_THEMES.map((t) => {
+                const isSelected = (s.theme || 'nordic') === t.id;
+                return `
+                  <button onclick="window.Lighthouse.selectTheme('${t.id}')"
+                    class="p-4 rounded-2xl text-left transition flex flex-col justify-between gap-3 ${
+                      isSelected ? 'lh-btn-soft ring-2' : 'lh-elevated'
+                    }" style="${isSelected ? 'border-color: var(--accent-primary);' : ''}">
+                    <div class="space-y-1">
+                      <div class="flex items-center justify-between gap-2">
+                        <span class="font-bold text-sm lh-text-main">${escapeHtml(t.name)}</span>
+                        ${
+                          isSelected
+                            ? '<span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full lh-badge-success">Active</span>'
+                            : ''
+                        }
+                      </div>
+                      <p class="text-xs lh-text-sec leading-relaxed">${escapeHtml(t.subtitle)}</p>
+                    </div>
+                    <div class="flex items-center gap-2 pt-1">
+                      ${t.swatches
+                        .map(
+                          (hex) => `
+                          <span class="w-7 h-7 rounded-lg border border-white/20 shadow-sm" style="background-color: ${hex};"></span>
+                        `
+                        )
+                        .join('')}
+                    </div>
+                  </button>
+                `;
+              }).join('')}
+            </div>
+          </div>
+
+          <div class="lh-surface rounded-2xl p-4 sm:p-6 space-y-4">
+            <div>
+              <h3 class="text-base sm:text-lg font-bold lh-text-main">2. Circadian Anchors &amp; Scripture Study Lens</h3>
+              <p class="text-xs lh-text-sec">Customize your wake/sleep anchors and default Bible comparison lens.</p>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <div>
+                <label class="text-xs font-semibold lh-text-sec block mb-1">Keeper Name</label>
+                <input type="text" value="${escapeHtml(s.userName || 'Dan')}"
+                  oninput="window.Lighthouse.updateSetting('userName', this.value)"
+                  class="w-full px-3 py-2 rounded-xl lh-input" />
+              </div>
+              <div>
+                <label class="text-xs font-semibold lh-text-sec block mb-1">Target Wake Time</label>
+                <input type="time" value="${escapeHtml(s.wakeTime || '05:30')}"
+                  onchange="window.Lighthouse.updateSetting('wakeTime', this.value)"
+                  class="w-full px-3 py-2 rounded-xl lh-input font-mono-code" />
+              </div>
+              <div>
+                <label class="text-xs font-semibold lh-text-sec block mb-1">Target Sleep Time</label>
+                <input type="time" value="${escapeHtml(s.sleepTime || '22:00')}"
+                  onchange="window.Lighthouse.updateSetting('sleepTime', this.value)"
+                  class="w-full px-3 py-2 rounded-xl lh-input font-mono-code" />
+              </div>
+              <div>
+                <label class="text-xs font-semibold lh-text-sec block mb-1">Scripture Study Lens</label>
+                <select onchange="window.Lighthouse.updateSetting('studyLens', this.value)"
+                  class="w-full px-3 py-2 rounded-xl lh-input">
+                  <option value="BOTH" ${s.studyLens === 'BOTH' ? 'selected' : ''}>Both NASB &amp; NLT</option>
+                  <option value="NASB" ${s.studyLens === 'NASB' ? 'selected' : ''}>NASB Structural Only</option>
+                  <option value="NLT" ${s.studyLens === 'NLT' ? 'selected' : ''}>NLT Relational Only</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="lh-surface rounded-2xl p-4 sm:p-6 space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 class="text-base sm:text-lg font-bold lh-text-main">3. Shared Calendar “Fog Filter” (Wife Reminder Mute Rules)</h3>
+                <p class="text-xs lh-text-sec">
+                  Automatically hides personal reminders on shared calendars matching these keywords so your Watchtower stays uncluttered.
+                </p>
+              </div>
+              <button onclick="window.Lighthouse.toggleWifeFilter()"
+                class="px-4 py-2 rounded-xl text-xs font-bold ${
+                  s.wifeFilterEnabled ? 'lh-btn-primary' : 'lh-elevated lh-text-sec'
+                }">
+                ${s.wifeFilterEnabled ? 'Fog Filter: ON' : 'Fog Filter: OFF'}
+              </button>
+            </div>
+
+            <div class="flex flex-wrap gap-2">
+              ${keywords
+                .map(
+                  (kw) => `
+                  <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium lh-elevated lh-text-main">
+                    <span>${escapeHtml(kw)}</span>
+                    <button onclick="window.Lighthouse.removeFilterKeyword('${escapeHtml(kw).replace(/'/g, "\\'")}')"
+                      class="lh-text-muted hover:lh-text-main font-bold" title="Remove keyword">×</button>
+                  </span>
+                `
+                )
+                .join('')}
+            </div>
+
+            <div class="flex items-center gap-2 pt-1">
+              <input id="new-filter-kw" type="text"
+                onkeydown="if(event.key==='Enter') window.Lighthouse.addFilterKeyword()"
+                placeholder="Add keyword or phrase to mute on shared calendar (e.g. 'dentist', 'call')..."
+                class="flex-1 px-3.5 py-2.5 rounded-xl lh-input" />
+              <button onclick="window.Lighthouse.addFilterKeyword()"
+                class="px-4 py-2.5 rounded-xl lh-btn-primary text-xs font-bold shrink-0">
+                + Add Rule
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // =========================================================================
+    // PAGE-SPECIFIC ACTIONS (BACKTRACK LEDGER, GOALS, FLEET DOCK, SETTINGS)
+    // =========================================================================
+    const pageActions = {
+      // Daily Accomplishment & Backtrack Ledger
+      setBacktrackDate(dateStr) {
+        if (!dateStr) return;
+        state.backtrackDate = dateStr;
+        ensureDailyLog(dateStr);
+        saveState();
+        renderApp();
+      },
+      stepBacktrackDate(deltaDays) {
+        const cur = state.backtrackDate || getLocalIsoDate(0);
+        const [y, m, d] = cur.split('-').map(Number);
+        const dt = new Date(y, m - 1, d);
+        dt.setDate(dt.getDate() + deltaDays);
+        const nextIso = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+        this.setBacktrackDate(nextIso);
+      },
+      toggleDailyMacro(dateStr, fieldKey) {
+        const log = ensureDailyLog(dateStr);
+        log[fieldKey] = !log[fieldKey];
+        saveState();
+        renderApp();
+        const labels = {
+          prayerDone: 'Prayer Sanctuary',
+          nightDone: 'Night Watch & Wind-Down',
+          morningDone: 'Morning Watch'
+        };
+        showToast(`${log[fieldKey] ? 'Completed' : 'Unchecked'} ${labels[fieldKey] || 'routine'} for ${dateStr}!`);
+      },
+      handleWorkoutModalityChange(selectId, customInputId) {
+        const sel = document.getElementById(selectId);
+        const inp = document.getElementById(customInputId);
+        if (!sel || !inp) return;
+        if (sel.value === 'Custom / Other...') {
+          inp.classList.remove('hidden');
+          inp.focus();
+        } else {
+          inp.classList.add('hidden');
+        }
+      },
+      resolveWorkoutModality(selectId, customInputId) {
+        const selVal = document.getElementById(selectId)?.value || 'Indoor Spinning';
+        if (selVal === 'Custom / Other...') {
+          const customVal = (document.getElementById(customInputId)?.value || '').trim();
+          return customVal || 'Custom Workout';
+        }
+        return selVal;
+      },
+      quickAddBacktrackWorkout(dateStr) {
+        const targetDate = dateStr || state.backtrackDate || getLocalIsoDate(0);
+        const modality = this.resolveWorkoutModality('bt-wk-modality', 'bt-wk-custom');
+        const rawTitle = (document.getElementById('bt-wk-title')?.value || '').trim();
+        const title = rawTitle || `${modality} Session`;
+        if (!Array.isArray(state.workouts)) state.workouts = [];
+        state.workouts.unshift({
+          id: `wk-${Date.now()}`,
+          date: targetDate,
+          startTime: '06:00',
+          durationMins: 45,
+          modality,
+          title,
+          videoOrRoute: '',
+          intensity: 'Moderate',
+          notes: 'Logged via Charted Course Daily Backtrack',
+          completed: true
+        });
+        saveState();
+        renderApp();
+        showToast(`Logged "${title}" (${modality}) for ${targetDate}!`);
+      },
+      toggleWorkoutCompleted(workoutId) {
+        state.workouts = (state.workouts || []).map((w) =>
+          w.id === workoutId ? { ...w, completed: !w.completed } : w
+        );
+        saveState();
+        renderApp();
+        showToast('Updated workout status!');
+      },
+      deleteWorkout(workoutId) {
+        state.workouts = (state.workouts || []).filter((w) => w.id !== workoutId);
+        saveState();
+        renderApp();
+      },
+      addBacktrackTodo(dateStr) {
+        const targetDate = dateStr || state.backtrackDate || getLocalIsoDate(0);
+        const inp = document.getElementById('bt-todo-input');
+        const text = (inp?.value || '').trim();
+        if (!text) return;
+        const log = ensureDailyLog(targetDate);
+        log.todos.push({ id: `dh-${Date.now()}`, text, completed: true });
+        saveState();
+        renderApp();
+        showToast(`Logged completed to-do for ${targetDate}!`);
+      },
+      toggleBacktrackTodo(dateStr, todoId) {
+        const log = ensureDailyLog(dateStr);
+        log.todos = (log.todos || []).map((t) =>
+          t.id === todoId ? { ...t, completed: !t.completed } : t
+        );
+        saveState();
+        renderApp();
+      },
+      deleteBacktrackTodo(dateStr, todoId) {
+        const log = ensureDailyLog(dateStr);
+        log.todos = (log.todos || []).filter((t) => t.id !== todoId);
+        saveState();
+        renderApp();
+      },
+
+      // Goals & aMCC
+      setAmccScore(val) {
+        state.dailyAmccScore = Number(val);
+        saveState();
+        renderApp();
+      },
+      updateAmccNote(val) {
+        state.amccNoteDraft = val;
+      },
+      logAmccMicroWin() {
+        const note = (state.amccNoteDraft || '').trim();
+        state.dailyAmccScore = Math.min(10, Number(state.dailyAmccScore || 7) + 1);
+        state.amccNoteDraft = '';
+        saveState();
+        renderApp();
+        showToast(note ? `Logged aMCC tenacity rep: "${note}"!` : 'Logged aMCC tenacity rep (+1)!');
+      },
+      logGoalRep(goalId) {
+        state.goals = state.goals.map((g) =>
+          g.id === goalId ? { ...g, streakDays: g.streakDays + 1, progressPct: Math.min(100, g.progressPct + 5) } : g
+        );
+        saveState();
+        renderApp();
+        showToast('Logged daily goal rep!');
+      },
+      pushGoalToWatch(goalId) {
+        const g = state.goals.find((i) => i.id === goalId);
+        if (!g) return;
+        state.planBlocks.push({
+          id: `pb-${Date.now()}`,
+          title: `[Course] ${g.title}`,
+          startTime: '06:00',
+          durationMins: 30,
+          category: 'morning',
+          completed: false,
+          dayOffset: 0
+        });
+        saveState();
+        showToast(`Scheduled "${g.title}" on 24h Watchtower!`);
+      },
+      createGoal() {
+        const title = (document.getElementById('goal-title')?.value || '').trim();
+        if (!title) return showToast('Enter a goal title first.');
+        const identityStatement = (document.getElementById('goal-identity')?.value || '').trim();
+        const wish = (document.getElementById('goal-wish')?.value || '').trim();
+        const outcome = (document.getElementById('goal-outcome')?.value || '').trim();
+        const obstacle = (document.getElementById('goal-obstacle')?.value || '').trim();
+        const ifThenPlan = (document.getElementById('goal-ifthen')?.value || '').trim();
+        state.goals.unshift({
+          id: `goal-${Date.now()}`,
+          title,
+          identityStatement,
+          wish,
+          outcome,
+          obstacle,
+          ifThenPlan,
+          progressPct: 10,
+          streakDays: 1,
+          status: 'active'
+        });
+        saveState();
+        renderApp();
+        showToast(`Charted new WOOP Beacon: "${title}"!`);
+      },
+      deleteGoal(goalId) {
+        state.goals = state.goals.filter((g) => g.id !== goalId);
+        saveState();
+        renderApp();
+      },
+
+      // Fleet Dock & QR Modal
+      updateSiteTodo(siteId, val) {
+        state.codedSites = state.codedSites.map((s) => (s.id === siteId ? { ...s, nextTodo: val } : s));
+        saveState();
+      },
+      createCodedSite() {
+        const title = (document.getElementById('site-title')?.value || '').trim();
+        const url = (document.getElementById('site-url')?.value || '').trim() || 'https://';
+        const tagline = (document.getElementById('site-tagline')?.value || '').trim();
+        if (!title) return;
+        state.codedSites.push({ id: `site-${Date.now()}`, title, url, tagline, category: 'Web App', status: 'Live', nextTodo: '' });
+        saveState();
+        renderApp();
+        showToast(`Added "${title}" to Fleet Dock!`);
+      },
+      deleteSite(siteId) {
+        state.codedSites = state.codedSites.filter((s) => s.id !== siteId);
+        saveState();
+        renderApp();
+      },
+      openQrModal(siteId) {
+        const site = (state.codedSites || []).find((s) => s.id === siteId);
+        if (!site) return;
+        activeQrSiteId = siteId;
+        document.getElementById('qr-modal-title').textContent = site.title;
+        const urlInput = document.getElementById('qr-modal-url-input');
+        if (urlInput) urlInput.value = site.url;
+        const openLink = document.getElementById('qr-modal-open-link');
+        if (openLink) openLink.href = site.url;
+        document.getElementById('qr-svg-box').innerHTML = renderQrModalGraphicHtml(site.url);
+        const modal = document.getElementById('qr-modal');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        if (window.lucide) window.lucide.createIcons();
+      },
+      updateQrModalUrl(newUrl) {
+        if (!activeQrSiteId) return;
+        state.codedSites = state.codedSites.map((s) => (s.id === activeQrSiteId ? { ...s, url: newUrl } : s));
+        saveState();
+        const openLink = document.getElementById('qr-modal-open-link');
+        if (openLink) openLink.href = newUrl;
+        const box = document.getElementById('qr-svg-box');
+        if (box) box.innerHTML = renderQrModalGraphicHtml(newUrl);
+      },
+      copyQrModalUrl() {
+        const input = document.getElementById('qr-modal-url-input');
+        if (!input) return;
+        if (navigator.clipboard?.writeText) {
+          navigator.clipboard.writeText(input.value);
+        } else {
+          input.select();
+          document.execCommand('copy');
+        }
+        showToast('Copied live URL to clipboard!');
+      },
+      downloadQrSvg() {
+        const site = state.codedSites.find((s) => s.id === activeQrSiteId);
+        if (!site) return;
+        const svgMarkup = generateRealQrSvg(site.url);
+        const blob = new Blob([svgMarkup], { type: 'image/svg+xml' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `${site.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_qr.svg`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        showToast('Downloaded scannable QR code SVG!');
+      },
+      closeQrModal() {
+        const modal = document.getElementById('qr-modal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        renderApp();
+      },
+
+      // Settings, Themes & Fog Filter
+      selectTheme(themeId) {
+        state.settings.theme = themeId;
+        saveState();
+        renderApp();
+        showToast('Updated Lighthouse color theme!');
+      },
+      toggleWifeFilter() {
+        state.settings.wifeFilterEnabled = !state.settings.wifeFilterEnabled;
+        saveState();
+        renderApp();
+      },
+      addFilterKeyword() {
+        const el = document.getElementById('new-filter-kw');
+        const kw = (el?.value || '').trim().toLowerCase();
+        if (!kw) return;
+        state.settings.wifeFilterKeywords = Array.from(new Set([...(state.settings.wifeFilterKeywords || []), kw]));
+        saveState();
+        renderApp();
+      },
+      removeFilterKeyword(kw) {
+        state.settings.wifeFilterKeywords = (state.settings.wifeFilterKeywords || []).filter((k) => k !== kw);
+        saveState();
+        renderApp();
+      }
+    };
+
+    initLighthousePage({
+      page: 'command.html',
+      defaultTab: 'goals',
+      renderers: {
+        goals: renderGoalsView,
+        launchpad: renderLaunchpadView,
+        settings: renderSettingsView
+      },
+      actions: pageActions
+    });
+  </script>
+</body>
+</html>
